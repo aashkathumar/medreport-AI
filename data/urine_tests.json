@@ -1,0 +1,64 @@
+{
+  "tests": [
+    {
+      "id": "URINE_PROTEIN",
+      "name": "Urine Protein",
+      "source": "NHS UK",
+      "plain_english": "Protein in urine can indicate that the kidneys are not filtering blood properly.",
+      "low_means": "No protein detected is the normal, healthy result.",
+      "high_means": "Protein in urine may indicate kidney disease, urinary tract infection, or high blood pressure affecting the kidneys.",
+      "normal_range": { "all": { "min": 0.0, "max": 0.15 } },
+      "unit": "g/L"
+    },
+    {
+      "id": "URINE_GLUCOSE",
+      "name": "Urine Glucose",
+      "source": "NHS UK",
+      "plain_english": "Glucose should not normally appear in urine. Its presence suggests blood sugar may be very high.",
+      "low_means": "No glucose in urine is normal.",
+      "high_means": "Glucose in urine may indicate uncontrolled diabetes.",
+      "normal_range": { "all": { "min": 0.0, "max": 0.0 } },
+      "unit": "mmol/L"
+    },
+    {
+      "id": "URINE_PH",
+      "name": "Urine pH",
+      "source": "NHS UK",
+      "plain_english": "Urine pH measures how acidic or alkaline your urine is, which can reflect your diet and kidney function.",
+      "low_means": "Very acidic urine may indicate a high-protein diet or certain metabolic conditions.",
+      "high_means": "Very alkaline urine may indicate a urinary tract infection or kidney issues.",
+      "normal_range": { "all": { "min": 4.5, "max": 8.0 } },
+      "unit": "pH"
+    },
+    {
+      "id": "URINE_LEUKOCYTES",
+      "name": "Urine Leukocytes",
+      "source": "NHS UK",
+      "plain_english": "White blood cells in urine can indicate a urinary tract infection or kidney inflammation.",
+      "low_means": "No leukocytes in urine is the normal result.",
+      "high_means": "Leukocytes in urine suggest infection or inflammation in the urinary tract.",
+      "normal_range": { "all": { "min": 0.0, "max": 5.0 } },
+      "unit": "cells/uL"
+    },
+    {
+      "id": "URINE_NITRITES",
+      "name": "Urine Nitrites",
+      "source": "NHS UK",
+      "plain_english": "Nitrites in urine are produced by certain bacteria and are a sign of bacterial infection.",
+      "low_means": "No nitrites is the normal, healthy result.",
+      "high_means": "Nitrites present suggests a bacterial urinary tract infection.",
+      "normal_range": { "all": { "min": 0.0, "max": 0.0 } },
+      "unit": "qualitative"
+    },
+    {
+      "id": "URINE_KETONES",
+      "name": "Urine Ketones",
+      "source": "NHS UK",
+      "plain_english": "Ketones are produced when your body burns fat for energy instead of glucose.",
+      "low_means": "No ketones is the normal result for most people.",
+      "high_means": "High ketones may indicate uncontrolled diabetes, prolonged fasting, or a very low carbohydrate diet.",
+      "normal_range": { "all": { "min": 0.0, "max": 0.5 } },
+      "unit": "mmol/L"
+    }
+  ]
+}
