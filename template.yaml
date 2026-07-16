@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+# NOTE: this template deploys the backend/ folder as a zip-based Lambda.
+# Because this project uses sentence-transformers (for RAG embeddings),
+# the deployed package will likely exceed the zip size limit -- you will
+# need to switch to a container-image Lambda deployment before this
+# template will deploy successfully. Covered in a later step; for now,
+# focus on getting everything working locally.
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        ANTHROPIC_API_KEY: !Sub '{{resolve:ssm:/medreport/anthropic_key}}'
+        AWS_REGION_NAME: eu-west-2
+        S3_BUCKET_NAME: medreport-ai-bucket
+        DYNAMODB_TABLE_NAME: medreport-reports
+        APP_ENV: production
+
+Resources:
+  MedReportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: app.main.handler
+      Runtime: python3.11
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+  ReportsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: medreport-reports
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: report_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: report_id
+          KeyType: RANGE
+
+  ReportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: medreport-ai-bucket
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteTransientFiles
+            Status: Enabled
+            ExpirationInDays: 1
