@@ -1,0 +1,154 @@
+{
+  "tests": [
+    {
+      "id": "HGB",
+      "name": "Haemoglobin",
+      "source": "NHS UK",
+      "plain_english": "Haemoglobin is the protein in red blood cells that carries oxygen around your body.",
+      "low_means": "Low haemoglobin may indicate anaemia, which can cause tiredness and breathlessness.",
+      "high_means": "High haemoglobin can sometimes indicate dehydration or a blood disorder.",
+      "normal_range": { "male": { "min": 13.5, "max": 17.5 }, "female": { "min": 11.5, "max": 16.0 }, "all": { "min": 11.5, "max": 17.5 } },
+      "unit": "g/dL"
+    },
+    {
+      "id": "WBC",
+      "name": "White Blood Cell Count",
+      "source": "NHS UK",
+      "plain_english": "White blood cells are part of your immune system and help fight infections.",
+      "low_means": "A low white cell count may mean your immune system is weakened.",
+      "high_means": "A high white cell count can indicate infection, inflammation, or in rare cases a blood disorder.",
+      "normal_range": { "all": { "min": 4.0, "max": 11.0 } },
+      "unit": "10^9/L"
+    },
+    {
+      "id": "PLT",
+      "name": "Platelets",
+      "source": "NHS UK",
+      "plain_english": "Platelets are tiny blood cells that help your blood clot when you have a cut or injury.",
+      "low_means": "Low platelets can mean your blood takes longer to clot, increasing bleeding risk.",
+      "high_means": "High platelets can increase the risk of blood clots.",
+      "normal_range": { "all": { "min": 150.0, "max": 400.0 } },
+      "unit": "10^9/L"
+    },
+    {
+      "id": "HBA1C",
+      "name": "HbA1c",
+      "source": "NHS UK",
+      "plain_english": "HbA1c measures your average blood sugar level over the past 2-3 months. It is used to diagnose and monitor diabetes.",
+      "low_means": "A very low HbA1c may indicate risk of hypoglycaemia (low blood sugar).",
+      "high_means": "A high HbA1c indicates your blood sugar has been elevated, which may suggest pre-diabetes or diabetes.",
+      "normal_range": { "all": { "min": 20.0, "max": 42.0 } },
+      "unit": "mmol/mol"
+    },
+    {
+      "id": "CHOL",
+      "name": "Total Cholesterol",
+      "source": "NHS UK",
+      "plain_english": "Cholesterol is a fatty substance in your blood. Some is needed but too much can increase heart disease risk.",
+      "low_means": "Very low cholesterol is unusual and your GP can advise if this is a concern.",
+      "high_means": "High cholesterol increases the risk of heart disease and stroke.",
+      "normal_range": { "all": { "min": 0.0, "max": 5.0 } },
+      "unit": "mmol/L"
+    },
+    {
+      "id": "LDL",
+      "name": "LDL Cholesterol",
+      "source": "NHS UK",
+      "plain_english": "LDL is often called bad cholesterol. High levels can build up in artery walls and increase heart disease risk.",
+      "low_means": "Low LDL is generally considered protective for heart health.",
+      "high_means": "High LDL increases the risk of cardiovascular disease.",
+      "normal_range": { "all": { "min": 0.0, "max": 3.0 } },
+      "unit": "mmol/L"
+    },
+    {
+      "id": "HDL",
+      "name": "HDL Cholesterol",
+      "source": "NHS UK",
+      "plain_english": "HDL is often called good cholesterol. It helps remove other forms of cholesterol from your bloodstream.",
+      "low_means": "Low HDL increases the risk of heart disease.",
+      "high_means": "High HDL is generally considered protective and desirable.",
+      "normal_range": { "male": { "min": 1.0, "max": 99.0 }, "female": { "min": 1.2, "max": 99.0 }, "all": { "min": 1.0, "max": 99.0 } },
+      "unit": "mmol/L"
+    },
+    {
+      "id": "TSH",
+      "name": "TSH",
+      "source": "NHS UK",
+      "plain_english": "TSH is a hormone produced by your pituitary gland that tells your thyroid how much hormone to make.",
+      "low_means": "Low TSH may indicate an overactive thyroid (hyperthyroidism).",
+      "high_means": "High TSH may indicate an underactive thyroid (hypothyroidism).",
+      "normal_range": { "all": { "min": 0.4, "max": 4.0 } },
+      "unit": "mIU/L"
+    },
+    {
+      "id": "FERRITIN",
+      "name": "Ferritin",
+      "source": "NHS UK",
+      "plain_english": "Ferritin is a protein that stores iron in your body. It is a good indicator of your iron levels.",
+      "low_means": "Low ferritin indicates low iron stores, which can lead to iron deficiency anaemia.",
+      "high_means": "High ferritin can indicate inflammation, liver disease, or iron overload.",
+      "normal_range": { "male": { "min": 30.0, "max": 400.0 }, "female": { "min": 13.0, "max": 150.0 }, "all": { "min": 13.0, "max": 400.0 } },
+      "unit": "ng/mL"
+    },
+    {
+      "id": "VIT_D",
+      "name": "Vitamin D",
+      "source": "NHS UK",
+      "plain_english": "Vitamin D helps your body absorb calcium and is essential for healthy bones, teeth, and muscles.",
+      "low_means": "Low vitamin D (deficiency) can cause bone pain, muscle weakness, and fatigue.",
+      "high_means": "Very high vitamin D from excessive supplements can be harmful.",
+      "normal_range": { "all": { "min": 50.0, "max": 200.0 } },
+      "unit": "nmol/L"
+    },
+    {
+      "id": "B12",
+      "name": "Vitamin B12",
+      "source": "NHS UK",
+      "plain_english": "Vitamin B12 is essential for making red blood cells and keeping your nervous system healthy.",
+      "low_means": "Low B12 can cause anaemia, fatigue, and neurological symptoms.",
+      "high_means": "Very high B12 may indicate liver disease or certain blood conditions.",
+      "normal_range": { "all": { "min": 200.0, "max": 900.0 } },
+      "unit": "pg/mL"
+    },
+    {
+      "id": "CREATININE",
+      "name": "Creatinine",
+      "source": "NHS UK",
+      "plain_english": "Creatinine is a waste product filtered by your kidneys. It is used to assess kidney function.",
+      "low_means": "Low creatinine can indicate low muscle mass.",
+      "high_means": "High creatinine may indicate that your kidneys are not filtering waste effectively.",
+      "normal_range": { "male": { "min": 74.0, "max": 110.0 }, "female": { "min": 59.0, "max": 104.0 }, "all": { "min": 59.0, "max": 110.0 } },
+      "unit": "umol/L"
+    },
+    {
+      "id": "ALT",
+      "name": "ALT",
+      "source": "NHS UK",
+      "plain_english": "ALT is an enzyme mainly found in the liver. Raised levels can indicate liver stress or damage.",
+      "low_means": "Low ALT is generally not a concern.",
+      "high_means": "High ALT may indicate liver inflammation, which can be caused by alcohol, medication, or liver disease.",
+      "normal_range": { "all": { "min": 7.0, "max": 56.0 } },
+      "unit": "U/L"
+    },
+    {
+      "id": "GLUCOSE",
+      "name": "Blood Glucose",
+      "source": "NHS UK",
+      "plain_english": "Blood glucose measures the amount of sugar in your blood at the time of the test.",
+      "low_means": "Low blood glucose (hypoglycaemia) can cause dizziness, sweating, and confusion.",
+      "high_means": "High blood glucose may indicate diabetes or pre-diabetes.",
+      "normal_range": { "all": { "min": 4.0, "max": 5.9 } },
+      "unit": "mmol/L"
+    },
+    {
+      "id": "CRP",
+      "name": "CRP",
+      "source": "NHS UK",
+      "plain_english": "C-Reactive Protein is produced by the liver in response to inflammation. It is a general marker of infection or inflammation.",
+      "low_means": "Low or undetectable CRP indicates no significant inflammation.",
+      "high_means": "High CRP indicates inflammation or infection somewhere in the body.",
+      "normal_range": { "all": { "min": 0.0, "max": 10.0 } },
+      "unit": "mg/L"
+    }
+  ]
+}
