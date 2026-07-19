@@ -1,0 +1,14 @@
+.env
+backend/.env
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+local_data/
+backend/tests/sample_report.pdf
+data/rag_chunks.json
+data/rag_index.faiss
+.aws-sam/
+.DS_Store
+.vscode/
