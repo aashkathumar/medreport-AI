@@ -1,6 +1,7 @@
 import csv
 import sys
 import time
+import textstat
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -19,7 +20,7 @@ TEST_CASES = [
 ]
 
 PROFILE = UserProfile(user_id="eval_user", age=35, sex="female", diet_type="vegetarian")
-PROVIDERS_TO_TEST = ["claude", "gemini", "groq_llama", "mistral"]  # comment out any you don't have keys for
+PROVIDERS_TO_TEST = ["gemini", "groq_llama", "mistral"]  # comment out any you don't have keys for
 
 
 def run_comparison():
@@ -51,6 +52,8 @@ def run_comparison():
                     "gp_question": result.gp_question,
                     "response_time_sec": elapsed,
                     "error": "",
+                    "fk_grade_what_it_measures": textstat.flesch_kincaid_grade(result.what_it_measures),
+                    "fk_grade_what_result_means": textstat.flesch_kincaid_grade(result.what_your_result_means),
                 })
             except Exception as e:
                 rows.append({

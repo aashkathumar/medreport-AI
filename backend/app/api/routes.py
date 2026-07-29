@@ -18,9 +18,10 @@ async def upload_pdf(
     age: int = 30,
     sex: str = "unknown",
     diet_type: str = "omnivore",
+    parse_method: str = "auto",  # "auto" | "regex" | "llm" | "ocr"
 ):
     file_bytes = await file.read()
-    parse_result = parse_report(file_bytes)
+    parse_result = parse_report(file_bytes, method=parse_method)
     raw = parse_result["results"]
 
     if not raw:
