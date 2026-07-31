@@ -130,6 +130,7 @@ backend/
   tests/                    Unit + smoke tests
   requirements.txt
   .env.example
+  
 
 frontend/
   app.py                    Streamlit entry point

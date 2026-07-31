@@ -13,21 +13,59 @@ You must never diagnose, prescribe, or replace medical advice.
 Respond ONLY with valid JSON. No markdown, no preamble."""
 
 
-def explain_test_result(
-    test: TestResult, profile: UserProfile, ref: dict, provider: str = None
-) -> ExplainedResult:
-    provider = provider or settings.default_llm_provider
-    call = PROVIDERS[provider]
+def call_with_fallback(
+    system: str, 
+    prompt: str, 
+    max_tokens: int, 
+    provider: str = None, 
+    model_name: str = None
+) -> dict:
+    """
+    Attempts to call the primary LLM provider. If it hits a rate limit,
+    quota error, or network failure, it automatically falls back to other 
+    configured providers in sequence.
+    """
+    primary = provider or settings.default_llm_provider
+    fallback_order = [primary, "groq_llama", "gemini", "mistral"]
+    providers_to_try = list(dict.fromkeys(fallback_order))
 
-    retrieved = retrieve_context(f"{test.raw_name} {test.status.value}", k=2)
-    retrieved_text = "\n".join(f"- {c['text']}" for c in retrieved) or "No additional context retrieved."
+    for current_provider in providers_to_try:
+        if current_provider not in PROVIDERS:
+            continue
+        try:
+            call_fn = PROVIDERS[current_provider]
+            kwargs = {"max_tokens": max_tokens}
+            if model_name and current_provider == primary:
+                kwargs["model"] = model_name
+                
+            return call_fn(system, prompt, **kwargs)
+        except Exception as e:
+            print(f"⚠️ Provider '{current_provider}' failed: {e}. Attempting fallback...")
+            continue
+            
+    raise RuntimeError("All LLM providers failed or rate limits were reached.")
+
+
+def explain_test_result(
+    test: TestResult, 
+    profile: UserProfile, 
+    ref: dict, 
+    provider: str = None,
+    model_name: str = None
+) -> ExplainedResult:
+    status_str = "NORMAL"
+    if hasattr(test, "status") and test.status and hasattr(test.status, "value"):
+        status_str = test.status.value
+
+    retrieved = retrieve_context(f"{test.raw_name} {status_str}", k=2)
+    retrieved_text = "\n".join(f"- {c['text']}" for c in retrieved) if retrieved else "No additional context retrieved."
 
     prompt = f"""Patient: {profile.age} year old {profile.sex}, {profile.diet_type} diet.
 
 Test: {test.raw_name}
 Value: {test.value} {test.unit}
-Normal range: {test.normal_range_min} -- {test.normal_range_max} {test.unit}
-Status: {test.status.value}
+Normal range: {getattr(test, 'normal_range_min', 'N/A')} -- {getattr(test, 'normal_range_max', 'N/A')} {test.unit}
+Status: {status_str}
 
 Reference (source: {ref.get('source','NHS UK')}):
 - Definition: {ref.get('plain_english','')}
@@ -46,27 +84,45 @@ Return JSON with exactly these keys:
 "disclaimer": "This explanation is for information only and does not replace medical advice. Please discuss your results with your GP."
 }}"""
 
-    data = call(SYSTEM, prompt, max_tokens=1000)
+    data = call_with_fallback(
+        system=SYSTEM, 
+        prompt=prompt, 
+        max_tokens=1000, 
+        provider=provider, 
+        model_name=model_name
+    )
+    
+    # Remove 'source' from LLM dictionary if present to prevent keyword collisions
+    data.pop("source", None)
+    
+    current_status = test.status if (hasattr(test, "status") and test.status) else RangeStatus.UNKNOWN
+
     return ExplainedResult(
-        test_id=test.test_id, raw_name=test.raw_name,
-        value=test.value, unit=test.unit, status=test.status,
-        normal_range_min=test.normal_range_min,
-        normal_range_max=test.normal_range_max,
-        source=ref.get("source", "NHS UK"), **data,
+        test_id=test.test_id,
+        raw_name=test.raw_name,
+        value=test.value,
+        unit=test.unit,
+        status=current_status,
+        normal_range_min=getattr(test, 'normal_range_min', None),
+        normal_range_max=getattr(test, 'normal_range_max', None),
+        source=ref.get("source", "NHS UK"),
+        **data,
     )
 
 
-def generate_summary(explained: list, profile: UserProfile, provider: str = None) -> dict:
-    provider = provider or settings.default_llm_provider
-    call = PROVIDERS[provider]
-
-    flagged = [r for r in explained if r.status != RangeStatus.NORMAL]
-    normal = [r for r in explained if r.status == RangeStatus.NORMAL]
+def generate_summary(
+    explained: list, 
+    profile: UserProfile, 
+    provider: str = None,
+    model_name: str = None
+) -> dict:
+    flagged = [r for r in explained if hasattr(r, 'status') and r.status != RangeStatus.NORMAL]
+    normal = [r for r in explained if hasattr(r, 'status') and r.status == RangeStatus.NORMAL]
 
     prompt = f"""Patient: {profile.age} year old {profile.sex}, {profile.diet_type}.
 
 Normal results: {', '.join(r.raw_name for r in normal) or 'None'}
-Flagged results: {', '.join(f'{r.raw_name} ({r.status.value})' for r in flagged) or 'None'}
+Flagged results: {', '.join(f'{r.raw_name} ({r.status.value if hasattr(r.status, "value") else r.status})' for r in flagged) or 'None'}
 
 Return JSON:
 {{
@@ -76,4 +132,10 @@ Return JSON:
 "closing_message": "Encouraging closing statement"
 }}"""
 
-    return call(SYSTEM, prompt, max_tokens=600)
+    return call_with_fallback(
+        system=SYSTEM, 
+        prompt=prompt, 
+        max_tokens=1200, 
+        provider=provider, 
+        model_name=model_name
+    )

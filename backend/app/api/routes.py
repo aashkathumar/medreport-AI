@@ -1,14 +1,50 @@
 import io
-from fastapi import APIRouter, UploadFile, File, HTTPException
+import concurrent.futures
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from app.models.schemas import TestResult, UserProfile, ExplainedResult
+from app.models.schemas import TestResult, UserProfile, ExplainedResult, RangeStatus
 from app.services.pdf_parser import parse_report
 from app.services.reference_db import get_normal_range, flag_result, get_reference_data
 from app.services.llm_service import explain_test_result, generate_summary
 from app.services.pdf_generator import generate_report_pdf
+from app.services.llm_providers import PROVIDERS, get_all_openrouter_models, get_all_groq_models
 from app.db import save_report, get_user_reports
 
 router = APIRouter()
+
+MAX_EXPLAIN_WORKERS = 10
+
+
+def _default_ref(test: TestResult) -> dict:
+    return {
+        "source": "General Medical Reference",
+        "plain_english": f"{test.raw_name} test.",
+        "low_means": "Below standard range.",
+        "high_means": "Above standard range.",
+    }
+
+
+@router.get("/llm/providers")
+def get_available_providers():
+    """Returns list of configured provider keys."""
+    return {"providers": list(PROVIDERS.keys())}
+
+
+@router.get("/llm/models/{provider}")
+def get_provider_models(provider: str):
+    """Fetches all live models available for a specified provider."""
+    if provider == "openrouter":
+        models = get_all_openrouter_models()
+    elif provider == "groq_llama":
+        models = get_all_groq_models()
+    elif provider == "gemini":
+        models = ["gemini-2.5-flash"]
+    elif provider == "mistral":
+        models = ["mistral-small-latest"]
+    else:
+        raise HTTPException(404, detail=f"Provider '{provider}' not found.")
+
+    return {"provider": provider, "total": len(models), "models": models}
 
 
 @router.post("/upload-pdf")
@@ -18,7 +54,9 @@ async def upload_pdf(
     age: int = 30,
     sex: str = "unknown",
     diet_type: str = "omnivore",
-    parse_method: str = "auto",  # "auto" | "regex" | "llm" | "ocr"
+    parse_method: str = "auto",
+    provider: str = Query(None, description="LLM provider name"),
+    model_name: str = Query(None, description="Dynamic model name ID"),
 ):
     file_bytes = await file.read()
     parse_result = parse_report(file_bytes, method=parse_method)
@@ -29,31 +67,32 @@ async def upload_pdf(
 
     profile = UserProfile(user_id=user_id, age=age, sex=sex, diet_type=diet_type)
 
-    # Build TestResult objects
     test_results = []
     for r in raw:
         ref = get_reference_data(r["test_id"])
-        if not ref:
-            continue
-        nr = get_normal_range(r["test_id"], sex, age)
-        status = flag_result(r["value"], nr)
+        nr = get_normal_range(r["test_id"], sex, age) if ref else None
+        status = flag_result(r["value"], nr) if nr else RangeStatus.UNKNOWN
+
         test_results.append(TestResult(
-            test_id=r["test_id"], raw_name=r["raw_name"],
-            value=r["value"], unit=r["unit"], status=status,
+            test_id=r["test_id"],
+            raw_name=r["raw_name"],
+            value=r["value"],
+            unit=r.get("unit", ""),
+            status=status,
             normal_range_min=nr["min"] if nr else None,
             normal_range_max=nr["max"] if nr else None,
         ))
 
-    # Explain via LLM (RAG-grounded, see llm_service.py)
-    explained = []
-    for test in test_results:
-        ref = get_reference_data(test.test_id)
-        explained.append(explain_test_result(test, profile, ref))
+    def _explain(test: TestResult):
+        ref = get_reference_data(test.test_id) or _default_ref(test)
+        return explain_test_result(test, profile, ref, provider=provider, model_name=model_name)
 
-    # Summary
-    summary = generate_summary(explained, profile)
+    workers = max(1, min(len(test_results), MAX_EXPLAIN_WORKERS))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        explained = list(executor.map(_explain, test_results))
 
-    # Save (local JSON file in dev, DynamoDB in production -- see app/db/__init__.py)
+    summary = generate_summary(explained, profile, provider=provider, model_name=model_name)
+
     report_data = {
         "explained_results": [r.model_dump() for r in explained],
         **summary,
@@ -67,29 +106,6 @@ async def upload_pdf(
         "explained_results": [r.model_dump() for r in explained],
         **summary,
     }
-
-
-@router.post("/download-pdf")
-async def download_pdf(report: dict):
-    explained = [ExplainedResult(**r) for r in report.get("explained_results", [])]
-    pdf_bytes = generate_report_pdf(
-        explained_results=explained,
-        overall_summary=report.get("overall_summary", ""),
-        top_gp_topics=report.get("top_gp_topics", []),
-        top_lifestyle_change=report.get("top_lifestyle_change", ""),
-        closing_message=report.get("closing_message", ""),
-    )
-    return StreamingResponse(
-        io.BytesIO(pdf_bytes),
-        media_type="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=medreport.pdf"},
-    )
-
-
-@router.get("/reports/{user_id}")
-async def get_reports(user_id: str):
-    return {"reports": get_user_reports(user_id)}
-
 
 @router.get("/health")
 async def health():

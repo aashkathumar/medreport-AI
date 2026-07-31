@@ -22,6 +22,21 @@ TEST_CASES = [
 PROFILE = UserProfile(user_id="eval_user", age=35, sex="female", diet_type="vegetarian")
 PROVIDERS_TO_TEST = ["gemini", "groq_llama", "mistral"]  # comment out any you don't have keys for
 
+# Define fixed fieldnames so every row has identical structure
+FIELDNAMES = [
+    "test",
+    "provider",
+    "status",
+    "what_it_measures",
+    "what_your_result_means",
+    "lifestyle_suggestions",
+    "gp_question",
+    "response_time_sec",
+    "error",
+    "fk_grade_what_it_measures",
+    "fk_grade_what_result_means",
+]
+
 
 def run_comparison():
     rows = []
@@ -57,15 +72,22 @@ def run_comparison():
                 })
             except Exception as e:
                 rows.append({
-                    "test": case["raw_name"], "provider": provider, "status": status.value,
-                    "what_it_measures": "", "what_your_result_means": "",
-                    "lifestyle_suggestions": "", "gp_question": "",
-                    "response_time_sec": "", "error": str(e),
+                    "test": case["raw_name"],
+                    "provider": provider,
+                    "status": status.value,
+                    "what_it_measures": "",
+                    "what_your_result_means": "",
+                    "lifestyle_suggestions": "",
+                    "gp_question": "",
+                    "response_time_sec": "",
+                    "error": str(e),
+                    "fk_grade_what_it_measures": "",
+                    "fk_grade_what_result_means": "",
                 })
 
     out_path = Path(__file__).parent / "comparison_results.csv"
     with open(out_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         writer.writeheader()
         writer.writerows(rows)
     print(f"\nDone -- {len(rows)} rows written to {out_path}")
