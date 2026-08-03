@@ -2,9 +2,23 @@
 Reference Database Service.
 Handles test alias resolution, normal range lookups by demographic (sex/age),
 and status flagging for lab values.
+
+CHANGED: flag_result() priority is now:
+  1. The reference range PRINTED ON THIS REPORT (most authoritative - it's
+     lab/method/instrument/demographic-specific, unlike a static lookup table).
+  2. Our static REFERENCE_DB (fallback for tests the document didn't print
+     a numeric range for, e.g. regex/OCR-only extraction with no range column).
+  3. The LLM's own status guess (a judgement call, not a comparison against
+     a specific number - lowest-trust numeric-adjacent source).
+  4. Qualitative string matching, unchanged.
+
+Also added: finalize_result() and dedupe_results(), shared helpers so every
+extraction tier (table / vision LLM / text LLM / regex) in pdf_parser.py
+computes status the exact same deterministic way, rather than each tier
+producing its own inconsistent answer.
 """
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 from app.models.schemas import RangeStatus
 
 # Canonical alias mapping table
@@ -61,7 +75,7 @@ def get_normal_range(test_id: str, sex: str = "unknown", age: int = 30) -> Optio
     entry = REFERENCE_DB.get(test_id)
     if not entry:
         return None
-    
+
     # Check sex-specific ranges first, fallback to default range
     sex_key = sex.lower() if sex else "unknown"
     if sex_key in entry:
@@ -76,35 +90,117 @@ def get_reference_data(test_id: str) -> Optional[Dict[str, Any]]:
     return REFERENCE_DB.get(test_id)
 
 
-# In app/services/reference_db.py
+# --------------------------------------------------------------------------
+# NEW: parsing the reference range as actually printed on the report
+# --------------------------------------------------------------------------
+# Real reports use several formats, and real OCR/text extraction sometimes
+# inserts stray whitespace (e.g. "6 .0 - 8.0 pH" was seen verbatim in a real
+# report), so we normalize that first.
 
-# In app/services/reference_db.py
+_RANGE_RE = re.compile(r"(-?\d+\.?\d*)\s*-\s*(-?\d+\.?\d*)")
+_LT_RE = re.compile(r"[<\u2264]\s*(-?\d+\.?\d*)")
+_GT_RE = re.compile(r"[>\u2265]\s*(-?\d+\.?\d*)")
+_STRAY_DECIMAL_RE = re.compile(r"(\d)\s+\.\s*(\d)")  # fixes "6 .0" -> "6.0"
+
+
+def parse_ref_range_string(ref_range: Optional[str]) -> Optional[Tuple[Optional[float], Optional[float]]]:
+    """
+    Parses a reference range EXACTLY as printed on a lab report into
+    (low, high) bounds, where either side can be None for an open-ended
+    range (e.g. "< 16.7" -> (None, 16.7)).
+
+    Returns None if the string is purely categorical/unparseable (e.g.
+    "Negative", "Non Reactive : <1.0" without extractable digits, "Pale
+    Yellow") - those cases fall through to qualitative handling elsewhere.
+
+    Handles the formats actually observed in real reports:
+      "13.0 - 16.5"            -> (13.0, 16.5)
+      "6 .0 - 8.0 pH"          -> (6.0, 8.0)   (stray-whitespace artifact)
+      "< 16.7"                 -> (None, 16.7)
+      "> 60.0"                 -> (60.0, None)
+      "Non Reactive : <1.0"    -> (None, 1.0)
+    """
+    if not ref_range or not isinstance(ref_range, str):
+        return None
+
+    cleaned = _STRAY_DECIMAL_RE.sub(r"\1.\2", ref_range.strip())
+
+    m = _RANGE_RE.search(cleaned)
+    if m:
+        try:
+            return float(m.group(1)), float(m.group(2))
+        except ValueError:
+            pass
+
+    m = _LT_RE.search(cleaned)
+    if m:
+        try:
+            return None, float(m.group(1))
+        except ValueError:
+            pass
+
+    m = _GT_RE.search(cleaned)
+    if m:
+        try:
+            return float(m.group(1)), None
+        except ValueError:
+            pass
+
+    return None
+
 
 def flag_result(
-    value: Any, 
-    normal_range: Optional[Dict[str, float]], 
-    llm_status: Optional[str] = None
+    value: Any,
+    normal_range: Optional[Dict[str, float]] = None,
+    llm_status: Optional[str] = None,
+    document_ref_range: Optional[str] = None,
 ) -> RangeStatus:
-    # 1. Prefer LLM status if provided and valid
+    """
+    Determines the clinical status of a result. Priority order (highest
+    trust first) - see module docstring for rationale:
+      1. document_ref_range  (printed on THIS report)
+      2. normal_range        (our static REFERENCE_DB lookup)
+      3. llm_status           (LLM's own qualitative guess)
+      4. qualitative string matching
+    """
+    # 1. Highest priority: the range this specific lab actually printed.
+    if document_ref_range:
+        bounds = parse_ref_range_string(document_ref_range)
+        if bounds is not None:
+            try:
+                val = float(value)
+                low, high = bounds
+                if low is not None and val < low:
+                    return RangeStatus.LOW
+                if high is not None and val > high:
+                    return RangeStatus.HIGH
+                return RangeStatus.NORMAL
+            except (ValueError, TypeError):
+                pass  # value wasn't numeric (e.g. "Present (+)") - fall through
+
+    # 2. Static reference DB, only reached if the document's own range
+    #    couldn't be parsed numerically above.
+    if value is not None:
+        try:
+            val = float(value)
+            if normal_range:
+                if "min" in normal_range and val < normal_range["min"]:
+                    return RangeStatus.LOW
+                if "max" in normal_range and val > normal_range["max"]:
+                    return RangeStatus.HIGH
+                return RangeStatus.NORMAL
+        except (ValueError, TypeError):
+            pass
+
+    # 3. LLM's own qualitative judgement - used only once both deterministic
+    #    numeric comparisons above were unavailable or inapplicable.
     if llm_status and llm_status in RangeStatus.__members__.values():
         return RangeStatus(llm_status)
-    
+
     if value is None:
         return RangeStatus.UNKNOWN
 
-    # 2. Numeric range comparison
-    try:
-        val = float(value)
-        if normal_range:
-            if "min" in normal_range and val < normal_range["min"]:
-                return RangeStatus.LOW
-            if "max" in normal_range and val > normal_range["max"]:
-                return RangeStatus.HIGH
-            return RangeStatus.NORMAL
-    except (ValueError, TypeError):
-        pass
-
-    # 3. Qualitative fallback safety net
+    # 4. Qualitative fallback safety net
     val_str = str(value).strip().lower()
     if val_str in ["negative", "nil", "clear", "absent", "normal", "pale yellow", "straw"]:
         return RangeStatus.NORMAL
@@ -112,3 +208,77 @@ def flag_result(
         return RangeStatus.HIGH
 
     return RangeStatus.UNKNOWN
+
+
+# --------------------------------------------------------------------------
+# NEW: shared post-processing helpers used by every extraction tier
+# --------------------------------------------------------------------------
+
+def finalize_result(result: dict, patient_sex: str = "unknown", patient_age: int = 30) -> dict:
+    """
+    Takes a raw extracted result dict from ANY tier (deterministic table,
+    vision LLM, text LLM, or regex) and computes the final, authoritative
+    status + normal-range bounds the same way every time.
+
+    Mutates and returns `result`, adding/overwriting:
+      - status              final RangeStatus.value string
+      - llm_status          the tier's original raw guess, kept for audit/debugging
+      - normal_range_min/max  resolved bounds, for downstream display or explain_all_test_results_batched
+    """
+    test_id = result.get("test_id") or "UNKNOWN_TEST"
+    value = result.get("value")
+    doc_range = result.get("ref_range")
+    llm_status = result.get("status")
+
+    range_min, range_max = None, None
+    bounds = parse_ref_range_string(doc_range) if doc_range else None
+    if bounds:
+        range_min, range_max = bounds
+    else:
+        static_range = get_normal_range(test_id, sex=patient_sex, age=patient_age)
+        if static_range:
+            range_min = static_range.get("min")
+            range_max = static_range.get("max")
+
+    normal_range = None
+    if range_min is not None or range_max is not None:
+        normal_range = {}
+        if range_min is not None:
+            normal_range["min"] = range_min
+        if range_max is not None:
+            normal_range["max"] = range_max
+
+    status = flag_result(value, normal_range=normal_range, llm_status=llm_status,
+                          document_ref_range=doc_range)
+
+    result["status"] = status.value if hasattr(status, "value") else str(status)
+    result["llm_status"] = llm_status
+    result["normal_range_min"] = range_min
+    result["normal_range_max"] = range_max
+    return result
+
+
+def dedupe_results(results: List[dict]) -> List[dict]:
+    """
+    De-duplicates extracted results by test_id (results can otherwise repeat
+    across table + LLM tiers, or across vision batches on long reports).
+    Keeps the most informative entry per test_id: prefers one with a
+    parseable printed ref_range, then one with a recognized/known test_id,
+    then first-seen.
+    """
+    best: Dict[str, dict] = {}
+    order: List[str] = []
+
+    def score(r: dict) -> tuple:
+        return (bool(parse_ref_range_string(r.get("ref_range"))), bool(r.get("known")))
+
+    for r in results:
+        tid = r.get("test_id") or "UNKNOWN_TEST"
+        if tid not in best:
+            best[tid] = r
+            order.append(tid)
+            continue
+        if score(r) > score(best[tid]):
+            best[tid] = r
+
+    return [best[tid] for tid in order]
