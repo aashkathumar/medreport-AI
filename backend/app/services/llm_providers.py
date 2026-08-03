@@ -1,6 +1,7 @@
 import json
 import re
 import requests
+from typing import Union, List, Dict, Any
 from app.config import settings
 
 
@@ -13,12 +14,25 @@ def _clean_json_string(text: str) -> str:
     return cleaned.strip()
 
 
-def call_gemini(system: str, prompt: str, max_tokens: int, model: str = "gemini-2.5-flash") -> dict:
+def call_gemini(system: str, prompt: Union[str, list], max_tokens: int = 2500, model: str = None) -> dict:
+    """
+    Calls Google Gemini API natively. Accepts text strings or vision content arrays.
+    """
     import google.generativeai as genai
     genai.configure(api_key=settings.gemini_api_key)
-    client = genai.GenerativeModel(model, system_instruction=system)
+    
+    target_model = model or "gemini-2.0-flash"
+    client = genai.GenerativeModel(target_model, system_instruction=system)
+    
+    # Handle vision image payloads vs plain text prompts
+    contents = prompt
+    if isinstance(prompt, list):
+        # Flatten vision blocks for Gemini SDK
+        text_parts = [b["text"] for b in prompt if b.get("type") == "text"]
+        contents = " ".join(text_parts) if text_parts else "Extract lab results"
+
     response = client.generate_content(
-        prompt,
+        contents,
         generation_config={
             "max_output_tokens": max_tokens,
             "response_mime_type": "application/json",
@@ -27,24 +41,34 @@ def call_gemini(system: str, prompt: str, max_tokens: int, model: str = "gemini-
     return json.loads(_clean_json_string(response.text))
 
 
-def call_groq_llama(system: str, prompt: str, max_tokens: int, model: str = None) -> dict:
+def call_groq_llama(system: str, prompt: Union[str, list], max_tokens: int = 4000, model: str = None) -> dict:
     from groq import Groq
     client = Groq(api_key=settings.groq_api_key)
     target_model = model or settings.groq_model
+    
+    user_content = prompt
+    if isinstance(prompt, list):
+        user_content = " ".join([b["text"] for b in prompt if b.get("type") == "text"])
+
     msg = client.chat.completions.create(
         model=target_model,
         max_tokens=max_tokens,
+        temperature=0.0,  # Strict deterministic output prevents JSON key corruption
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
+            {"role": "user", "content": user_content},
         ],
     )
     return json.loads(_clean_json_string(msg.choices[0].message.content))
+    
 
-
-def call_mistral(system: str, prompt: str, max_tokens: int, model: str = None) -> dict:
+def call_mistral(system: str, prompt: Union[str, list], max_tokens: int = 2500, model: str = None) -> dict:
     target_model = model or "mistral-small-latest"
+    user_content = prompt
+    if isinstance(prompt, list):
+        user_content = " ".join([b["text"] for b in prompt if b.get("type") == "text"])
+
     resp = requests.post(
         "https://api.mistral.ai/v1/chat/completions",
         headers={
@@ -57,7 +81,7 @@ def call_mistral(system: str, prompt: str, max_tokens: int, model: str = None) -
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": user_content},
             ],
         },
         timeout=30,
@@ -67,9 +91,9 @@ def call_mistral(system: str, prompt: str, max_tokens: int, model: str = None) -
     return json.loads(_clean_json_string(content))
 
 
-def call_openrouter(system: str, prompt: str, max_tokens: int, model: str = None) -> dict:
+def call_openrouter(system: str, prompt: Union[str, list], max_tokens: int = 2500, model: str = None) -> dict:
     """
-    Calls OpenRouter API using OpenAI SDK. Accepts ANY valid model ID on OpenRouter.
+    Calls OpenRouter API using OpenAI SDK. Supports both text prompts AND multimodal vision payloads.
     """
     from openai import OpenAI
     
@@ -81,8 +105,10 @@ def call_openrouter(system: str, prompt: str, max_tokens: int, model: str = None
         api_key=settings.openrouter_api_key,
     )
     
+    # Use specified model or fallback to openrouter_model
     target_model = model or getattr(settings, "openrouter_model", "openrouter/free")
     
+    # OpenAI format natively accepts string OR list of content blocks (for vision data URLs)
     response = client.chat.completions.create(
         model=target_model,
         max_tokens=max_tokens,

@@ -1,110 +1,132 @@
-"""
-LLM-based extraction -- an alternative/fallback to the regex parser in
-pdf_parser.py. Handles report layouts regex can't (e.g. dense single-space
-table formats or prose-embedded values common in real lab PDFs), at the
-cost of one extra LLM call per chunk.
-"""
-import concurrent.futures
-from typing import List
+import fitz  # PyMuPDF
+import base64
+import json
 from app.config import settings
-from app.services.llm_providers import PROVIDERS
+from app.services.llm_service import call_with_fallback
 from app.services.reference_db import resolve_test_id
 
-EXTRACTION_SYSTEM = """You extract structured lab test data from medical report text.
-Rules:
-- Only extract values that are clearly numeric test RESULTS (not dates, ages,
-  phone numbers, accession numbers, patient IDs, or the reference/normal
-  range values -- e.g. "13.0 - 17.0" is a range, not a result).
-- Use the exact test name as it appears in the report.
-- If the same test appears more than once, only include it once.
-- Return ONLY valid JSON, no markdown, no commentary."""
+# In app/services/llm_extractor.py
 
-EXTRACTION_PROMPT = """Extract lab test results (Blood or Urine tests) from this medical report.
+EXTRACTION_SYSTEM = """You are an expert clinical laboratory data extraction system.
+Extract ONLY actual medical diagnostic tests and their measured results.
+IGNORE ALL administrative metadata, patient info, doctor names, and barcodes.
 
-CRITICAL EXTRACTION RULES:
-1. Extract numerical values (e.g. 5.5, 1.025, 10.2) AND semi-quantitative grade values (e.g., "1+", "2+", "3+", "Negative", "NIL").
-2. Match test names with their corresponding results across rows or columns.
-   - Example: If 'Urinary Glucose' matches with '1+', extract value: "1+" (or numeric 1.0).
-   - Example: If 'Urinary pH' matches with '5.5', extract value: 5.5.
-3. Ignore reference ranges (e.g., '6.0-8.0', '1.005-1.030'), dates, method names (e.g. 'bromothymol blue'), and hospital metadata.
-4. Extract ONLY the test results. Do not output duplicate test names.
-5. This may be a fragment of a longer report -- only extract what is present in this excerpt, do not guess at values that are cut off.
+CRITICAL JSON SYNTAX RULES:
+1. Output MUST be strictly valid JSON.
+2. Every key and string value MUST be enclosed in double quotes (e.g., "unit": "%").
+3. NEVER use parentheses or non-standard syntax for JSON keys (e.g., DO NOT write "unit("%")", write "unit": "%").
+4. For special symbols like %, μg, or μmol/L, write clean plain-text strings like "%", "ug/L", or "umol/L".
 
-Report text:
----
-{text}
----
+For each extracted result, evaluate its medical status based on standard clinical context:
+- "normal": Value is within expected limits or indicates a healthy qualitative finding (e.g., 'Clear', 'Pale Yellow', 'Negative', 'Nil', '0-1').
+- "high": Value is elevated above normal range or indicates an abnormal presence (e.g., '1+', '2+', 'Positive', 'Cloudy').
+- "low": Value is below normal expected range.
+- "unknown": Only if context is genuinely ambiguous.
 
-Return JSON with format:
-{{"results": [{{"raw_name": "...", "value": 0.0, "unit": "..."}}]}}"""
-
-CHUNK_SIZE = 6000
-CHUNK_OVERLAP = 200
-MAX_CHUNK_WORKERS = 4
+Return valid JSON in this EXACT structure:
+{
+  "results": [
+    {"raw_name": "Glycosylated Haemoglobin (HbA1c)", "value": "5.7", "unit": "%", "status": "normal"},
+    {"raw_name": "Serum Creatinine", "value": "80", "unit": "umol/L", "status": "normal"}
+  ]
+}"""
 
 
-def _chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
-    if len(text) <= size:
-        return [text]
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = start + size
-        chunks.append(text[start:end])
-        if end >= len(text):
-            break
-        start = end - overlap
-    return chunks
-
-
-def _extract_chunk(call, chunk: str) -> list[dict]:
-    prompt = EXTRACTION_PROMPT.format(text=chunk)
+def pdf_to_base64_images(pdf_bytes: bytes, max_pages: int = 5) -> list[str]:
+    """Helper to render PDF pages as Base64 data URLs for Vision models."""
     try:
-        data = call(EXTRACTION_SYSTEM, prompt, max_tokens=2000)
-        return data.get("results", [])
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        images = []
+        for page_num in range(min(len(doc), max_pages)):
+            page = doc[page_num]
+            pix = page.get_pixmap(dpi=150)
+            img_bytes = pix.tobytes("png")
+            b64_str = base64.b64encode(img_bytes).decode("utf-8")
+            images.append(f"data:image/png;base64,{b64_str}")
+        return images
     except Exception as e:
-        print(f"LLM extraction failed on chunk: {e}")
+        print(f"⚠️ PyMuPDF image conversion failed: {e}")
         return []
 
 
-def extract_with_llm(text: str, provider: str = None) -> list[dict]:
-    provider = provider or settings.default_llm_provider
-    call = PROVIDERS[provider]
-    chunks = _chunk_text(text)
+def extract_with_vision(pdf_bytes: bytes, provider: str = None) -> list[dict]:
+    """TIER 1: Multimodal Vision Extraction using call_with_fallback"""
+    if not pdf_bytes:
+        return []
 
-    # Chunks are independent LLM calls -- running them in parallel via thread pool
-    if len(chunks) == 1:
-        all_raw_results = _extract_chunk(call, chunks[0])
-    else:
-        all_raw_results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(chunks), MAX_CHUNK_WORKERS)) as executor:
-            for raw_results in executor.map(lambda c: _extract_chunk(call, c), chunks):
-                all_raw_results.extend(raw_results)
+    images = pdf_to_base64_images(pdf_bytes, max_pages=5)
+    if not images:
+        return []
 
-    matched, seen = [], set()
-    for r in all_raw_results:
-        raw_name = r.get("raw_name", "")
-        if not raw_name:
+    content_blocks = [{"type": "text", "text": "Extract all clinical lab test results visible in these images."}]
+    for img_url in images:
+        content_blocks.append({"type": "image_url", "image_url": {"url": img_url}})
+
+    try:
+        data = call_with_fallback(
+            system=EXTRACTION_SYSTEM,
+            prompt=content_blocks,
+            max_tokens=4000,
+            provider=provider
+        )
+        results = data.get("results", []) if isinstance(data, dict) else []
+        return _format_extracted_results(results)
+    except Exception as e:
+        print(f"⚠️ Tier 1 (Vision) failed across all providers: {e}")
+        return []
+
+
+def extract_with_llm_text(text: str, provider: str = None) -> list[dict]:
+    """TIER 2: Text-Based LLM Extraction using call_with_fallback"""
+    if not text or not text.strip():
+        return []
+
+    prompt = f"Extract all medical test results from this text:\n---\n{text}\n---"
+
+    try:
+        data = call_with_fallback(
+            system=EXTRACTION_SYSTEM,
+            prompt=prompt,
+            max_tokens=4000,
+            provider=provider
+        )
+        results = data.get("results", []) if isinstance(data, dict) else []
+        return _format_extracted_results(results)
+    except Exception as e:
+        print(f"⚠️ Tier 2 (LLM Text) failed: {e}.")
+        return []
+
+
+def _format_extracted_results(raw_results: list) -> list[dict]:
+    cleaned = []
+    for r in raw_results:
+        name = str(r.get("raw_name", "")).strip()
+        val = str(r.get("value", "")).strip()
+        if not name or not val:
             continue
-
-        test_id = resolve_test_id(raw_name) or raw_name.upper().strip().replace(" ", "_")
-
-        if test_id in seen:
-            continue
-
-        # Safely attempt float conversion; retain original string value ("Negative", "1+", etc.) if float fails
-        raw_val = r.get("value")
-        try:
-            val = float(raw_val)
-        except (ValueError, TypeError):
-            val = str(raw_val) if raw_val is not None else ""
-
-        matched.append({
-            "raw_name": raw_name,
-            "test_id": test_id,
-            "value": val,
-            "unit": r.get("unit", ""),
-        })
-        seen.add(test_id)
         
-    return matched
+        test_id = resolve_test_id(name) or name.upper().strip().replace(" ", "_")
+        cleaned.append({
+            "test_id": test_id,
+            "raw_name": name,
+            "value": val,
+            "unit": str(r.get("unit", "")).strip(),
+            "status": str(r.get("status", "unknown")).lower().strip()
+        })
+    return cleaned
+
+
+def extract_holistic(pdf_bytes: bytes, raw_text: str = None, provider: str = None) -> tuple[list[dict], str]:
+    # 1. Try Tier 1: Vision LLM
+    if pdf_bytes:
+        results = extract_with_vision(pdf_bytes, provider=provider)
+        if results:
+            return results, "vision"
+
+    # 2. Try Tier 2: LLM Text
+    if raw_text:
+        results = extract_with_llm_text(raw_text, provider=provider)
+        if results:
+            return results, "llm_text"
+
+    return [], "failed"

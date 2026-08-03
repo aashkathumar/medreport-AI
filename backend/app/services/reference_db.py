@@ -76,22 +76,39 @@ def get_reference_data(test_id: str) -> Optional[Dict[str, Any]]:
     return REFERENCE_DB.get(test_id)
 
 
-def flag_result(value: Any, normal_range: Optional[Dict[str, float]]) -> RangeStatus:
-    """
-    Flags a test value as LOW, NORMAL, HIGH, or UNKNOWN based on normal range.
-    Safely handles string values (e.g., "Negative", "1-2").
-    """
-    if normal_range is None or value is None:
-        return RangeStatus.UNKNOWN
+# In app/services/reference_db.py
+
+# In app/services/reference_db.py
+
+def flag_result(
+    value: Any, 
+    normal_range: Optional[Dict[str, float]], 
+    llm_status: Optional[str] = None
+) -> RangeStatus:
+    # 1. Prefer LLM status if provided and valid
+    if llm_status and llm_status in RangeStatus.__members__.values():
+        return RangeStatus(llm_status)
     
+    if value is None:
+        return RangeStatus.UNKNOWN
+
+    # 2. Numeric range comparison
     try:
         val = float(value)
-        if val < normal_range["min"]:
-            return RangeStatus.LOW
-        elif val > normal_range["max"]:
-            return RangeStatus.HIGH
-        else:
+        if normal_range:
+            if "min" in normal_range and val < normal_range["min"]:
+                return RangeStatus.LOW
+            if "max" in normal_range and val > normal_range["max"]:
+                return RangeStatus.HIGH
             return RangeStatus.NORMAL
     except (ValueError, TypeError):
-        # Qualitative values (e.g. "Negative", "1+") cannot be numerically flagged
-        return RangeStatus.UNKNOWN
+        pass
+
+    # 3. Qualitative fallback safety net
+    val_str = str(value).strip().lower()
+    if val_str in ["negative", "nil", "clear", "absent", "normal", "pale yellow", "straw"]:
+        return RangeStatus.NORMAL
+    elif val_str in ["positive", "1+", "2+", "3+", "4+", "reactive", "cloudy"]:
+        return RangeStatus.HIGH
+
+    return RangeStatus.UNKNOWN

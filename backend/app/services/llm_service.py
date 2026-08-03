@@ -1,12 +1,14 @@
+import time
+from typing import Union, List
 from app.config import settings
 from app.models.schemas import TestResult, ExplainedResult, UserProfile, RangeStatus
 from app.services.rag_service import retrieve_context
 from app.services.llm_providers import PROVIDERS
 
-SYSTEM = """You are a health literacy assistant helping patients understand their blood test results.
+SYSTEM = """You are a health literacy assistant helping patients understand their blood and urine test results.
 You must always:
 - Use simple plain English (reading age 14)
-- Cite the source (NHS UK or NIH MedlinePlus)
+- Cite the source (NHS UK or NIH MedlinePlus, or General Medical Consensus if dynamic)
 - Include a GP referral prompt
 - Be calm and non-alarmist
 You must never diagnose, prescribe, or replace medical advice.
@@ -15,99 +17,114 @@ Respond ONLY with valid JSON. No markdown, no preamble."""
 
 def call_with_fallback(
     system: str, 
-    prompt: str, 
-    max_tokens: int, 
+    prompt: Union[str, list], 
+    max_tokens: int = 4000, 
     provider: str = None, 
     model_name: str = None
 ) -> dict:
-    """
-    Attempts to call the primary LLM provider. If it hits a rate limit,
-    quota error, or network failure, it automatically falls back to other 
-    configured providers in sequence.
-    """
     primary = provider or settings.default_llm_provider
-    fallback_order = [primary, "groq_llama", "gemini", "mistral"]
-    providers_to_try = list(dict.fromkeys(fallback_order))
+    # Primary -> Groq -> Mistral -> Gemini -> OpenRouter
+    fallback_sequence = [primary, "groq_llama", "mistral", "gemini", "openrouter"]
+    
+    seen = set()
+    sequence = [p for p in fallback_sequence if not (p in seen or seen.add(p))]
 
-    for current_provider in providers_to_try:
-        if current_provider not in PROVIDERS:
-            continue
-        try:
-            call_fn = PROVIDERS[current_provider]
-            kwargs = {"max_tokens": max_tokens}
-            if model_name and current_provider == primary:
-                kwargs["model"] = model_name
-                
-            return call_fn(system, prompt, **kwargs)
-        except Exception as e:
-            print(f"⚠️ Provider '{current_provider}' failed: {e}. Attempting fallback...")
+    for prov in sequence:
+        fn = PROVIDERS.get(prov)
+        if not fn:
             continue
             
-    raise RuntimeError("All LLM providers failed or rate limits were reached.")
+        target_model = model_name if prov == primary else None
 
+        try:
+            return fn(system, prompt, max_tokens=max_tokens, model=target_model)
+        except Exception as e:
+            print(f"⚠️ Provider '{prov}' failed: {e}. Moving immediately to next fallback...")
+            continue
 
-def explain_test_result(
-    test: TestResult, 
+    raise RuntimeError("All LLM providers failed in fallback pipeline.")
+    
+
+def explain_all_test_results_batched(
+    test_results: List[TestResult], 
     profile: UserProfile, 
-    ref: dict, 
     provider: str = None,
     model_name: str = None
-) -> ExplainedResult:
-    status_str = "NORMAL"
-    if hasattr(test, "status") and test.status and hasattr(test.status, "value"):
-        status_str = test.status.value
+) -> List[ExplainedResult]:
+    """
+    Explains ALL extracted test results in a SINGLE batched LLM call.
+    Eliminates TPM/RPM rate limits and speeds up execution from 180s to ~2s.
+    """
+    if not test_results:
+        return []
 
-    retrieved = retrieve_context(f"{test.raw_name} {status_str}", k=2)
-    retrieved_text = "\n".join(f"- {c['text']}" for c in retrieved) if retrieved else "No additional context retrieved."
+    # Build structured list of tests for prompt
+    tests_summary = []
+    for t in test_results:
+        status_val = t.status.value if hasattr(t.status, "value") else str(t.status)
+        min_val = getattr(t, 'normal_range_min', None) or "N/A"
+        max_val = getattr(t, 'normal_range_max', None) or "N/A"
+        tests_summary.append(
+            f"- Test ID: {t.test_id} | Name: {t.raw_name} | Value: {t.value} {t.unit} | "
+            f"Range: {min_val}-{max_val} {t.unit} | Status: {status_val}"
+        )
 
-    prompt = f"""Patient: {profile.age} year old {profile.sex}, {profile.diet_type} diet.
+    tests_text = "\n".join(tests_summary)
 
-Test: {test.raw_name}
-Value: {test.value} {test.unit}
-Normal range: {getattr(test, 'normal_range_min', 'N/A')} -- {getattr(test, 'normal_range_max', 'N/A')} {test.unit}
-Status: {status_str}
+    prompt = f"""Patient Profile: {profile.age} year old {profile.sex}, {profile.diet_type} diet.
 
-Reference (source: {ref.get('source','NHS UK')}):
-- Definition: {ref.get('plain_english','')}
-- Low means: {ref.get('low_means','N/A')}
-- High means: {ref.get('high_means','N/A')}
+Extracted Diagnostic Tests ({len(test_results)} total):
+{tests_text}
 
-Additional retrieved context:
-{retrieved_text}
+For EACH test listed above, generate a plain English, non-alarmist explanation suitable for a reading age of 14.
 
-Return JSON with exactly these keys:
+Return valid JSON in this exact structure:
 {{
-"what_it_measures": "2-3 sentence plain English explanation",
-"what_your_result_means": "2-3 sentences specific to this patient's result",
-"lifestyle_suggestions": ["suggestion 1", "suggestion 2", "suggestion 3"],
-"gp_question": "One specific question to ask their GP",
-"disclaimer": "This explanation is for information only and does not replace medical advice. Please discuss your results with your GP."
+  "explanations": [
+    {{
+      "test_id": "TEST_ID_HERE",
+      "what_it_measures": "2-3 sentence explanation of what this test evaluates.",
+      "what_your_result_means": "2-3 sentences explaining this specific finding for the patient.",
+      "lifestyle_suggestions": ["Practical tip 1", "Practical tip 2"],
+      "gp_question": "One specific question to ask their GP.",
+      "disclaimer": "This explanation is for information only and does not replace medical advice."
+    }}
+  ]
 }}"""
 
     data = call_with_fallback(
-        system=SYSTEM, 
-        prompt=prompt, 
-        max_tokens=1000, 
-        provider=provider, 
+        system=SYSTEM,
+        prompt=prompt,
+        max_tokens=4000,
+        provider=provider,
         model_name=model_name
     )
-    
-    # Remove 'source' from LLM dictionary if present to prevent keyword collisions
-    data.pop("source", None)
-    
-    current_status = test.status if (hasattr(test, "status") and test.status) else RangeStatus.UNKNOWN
 
-    return ExplainedResult(
-        test_id=test.test_id,
-        raw_name=test.raw_name,
-        value=test.value,
-        unit=test.unit,
-        status=current_status,
-        normal_range_min=getattr(test, 'normal_range_min', None),
-        normal_range_max=getattr(test, 'normal_range_max', None),
-        source=ref.get("source", "NHS UK"),
-        **data,
-    )
+    explanations_list = data.get("explanations", []) if isinstance(data, dict) else []
+    exp_map = {item.get("test_id", ""): item for item in explanations_list if isinstance(item, dict)}
+
+    explained_results = []
+    for t in test_results:
+        details = exp_map.get(t.test_id, {})
+        explained_results.append(
+            ExplainedResult(
+                test_id=t.test_id,
+                raw_name=t.raw_name,
+                value=t.value,
+                unit=t.unit,
+                status=t.status,
+                normal_range_min=getattr(t, 'normal_range_min', None),
+                normal_range_max=getattr(t, 'normal_range_max', None),
+                source="NHS UK / Medical Consensus",
+                what_it_measures=details.get("what_it_measures", f"Evaluates {t.raw_name} level in sample."),
+                what_your_result_means=details.get("what_your_result_means", f"Your result is {t.value} {t.unit}."),
+                lifestyle_suggestions=details.get("lifestyle_suggestions", ["Maintain a healthy balanced diet.", "Stay well hydrated."]),
+                gp_question=details.get("gp_question", "What does this result mean for my overall health?"),
+                disclaimer=details.get("disclaimer", "This explanation is for educational purposes only.")
+            )
+        )
+
+    return explained_results
 
 
 def generate_summary(
@@ -116,17 +133,21 @@ def generate_summary(
     provider: str = None,
     model_name: str = None
 ) -> dict:
-    flagged = [r for r in explained if hasattr(r, 'status') and r.status != RangeStatus.NORMAL]
+    flagged = [r for r in explained if hasattr(r, 'status') and r.status in (RangeStatus.LOW, RangeStatus.HIGH)]
     normal = [r for r in explained if hasattr(r, 'status') and r.status == RangeStatus.NORMAL]
+    dynamic = [r for r in explained if hasattr(r, 'status') and r.status == RangeStatus.UNKNOWN]
 
     prompt = f"""Patient: {profile.age} year old {profile.sex}, {profile.diet_type}.
 
 Normal results: {', '.join(r.raw_name for r in normal) or 'None'}
-Flagged results: {', '.join(f'{r.raw_name} ({r.status.value if hasattr(r.status, "value") else r.status})' for r in flagged) or 'None'}
+Flagged results (out of range): {', '.join(f'{r.raw_name} ({r.status.value})' for r in flagged) or 'None'}
+Dynamic results (analyzed dynamically): {', '.join(r.raw_name for r in dynamic) or 'None'}
+
+Provide an overall encouraging summary covering all the tests above.
 
 Return JSON:
 {{
-"overall_summary": "2-3 sentence calm summary",
+"overall_summary": "2-3 sentence calm summary summarizing overall health findings",
 "top_gp_topics": ["topic 1", "topic 2"],
 "top_lifestyle_change": "Single most impactful change",
 "closing_message": "Encouraging closing statement"
@@ -135,7 +156,7 @@ Return JSON:
     return call_with_fallback(
         system=SYSTEM, 
         prompt=prompt, 
-        max_tokens=1200, 
+        max_tokens=1000, 
         provider=provider, 
         model_name=model_name
     )

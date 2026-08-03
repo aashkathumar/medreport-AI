@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Union
 from enum import Enum
 
 
@@ -13,7 +13,7 @@ class RangeStatus(str, Enum):
 class TestResult(BaseModel):
     test_id: str
     raw_name: str
-    value: float
+    value: Union[str, float]
     unit: str
     status: RangeStatus
     normal_range_min: Optional[float] = None
@@ -24,7 +24,7 @@ class TestResult(BaseModel):
 class ExplainedResult(BaseModel):
     test_id: str
     raw_name: str
-    value: float
+    value: Union[str, float]
     unit: str
     status: RangeStatus
     normal_range_min: Optional[float] = None
@@ -33,8 +33,8 @@ class ExplainedResult(BaseModel):
     what_it_measures: str
     what_your_result_means: str
     lifestyle_suggestions: List[str]
-    gp_question: str
-    disclaimer: str
+    gp_question: Optional[str] = "What do these test results mean for my overall health?"
+    disclaimer: Optional[str] = "This information is for educational purposes only and does not replace medical advice."
 
 
 class UserProfile(BaseModel):

@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 import pdfplumber
 import pandas as pd
 from app.services.reference_db import resolve_test_id
-from app.services.llm_extractor import extract_with_llm
+from app.services.llm_extractor import extract_holistic
 
 PATTERNS = [
     r"([A-Za-z][A-Za-z0-9\s\(\)\/\-]+):\s*([\d\.]+)\s*([a-zA-Z0-9\/\%\u00b5u\u03bc\*\^]+)?",
@@ -66,16 +66,7 @@ def _extract_ocr_text(file_bytes: bytes) -> str:
 def _resolve_or_synthesize_id(raw_name: str) -> Tuple[str, bool]:
     """
     Returns (test_id, is_known).
-
-    Previously, any line that matched an extraction pattern but whose name
-    didn't resolve against the reference database (resolve_test_id() ->
-    None) was silently dropped -- the test simply never appeared in the
-    output. That meant the system could only ever report on the fixed set
-    of tests curated in blood_tests.json / urine_tests.json, even though
-    routes.py already has a generic fallback explainer ready for unknown
-    tests. Here, an unresolved name gets a synthetic ID instead of being
-    discarded, so it survives to the point where routes.py decides how to
-    explain it (with or without a curated reference range).
+    Resolves known IDs or synthesizes uppercase string identifiers for novel tests.
     """
     test_id = resolve_test_id(raw_name)
     if test_id:
@@ -86,17 +77,7 @@ def _resolve_or_synthesize_id(raw_name: str) -> Tuple[str, bool]:
 
 def _parse_pipe_row(line: str) -> Optional[dict]:
     """
-    pdfplumber's extract_tables() output gets rendered as a markdown grid
-    (df.to_markdown()) in _extract_pypdf_text, e.g.:
-        | Test          | Result | Units | Reference Range |
-        | Haemoglobin   | 10.2   | g/dL  | 13.0-17.0        |
-    None of PATTERNS match pipe-delimited cells (they assume colon/
-    whitespace/tab separated text), so results that only ever appeared
-    inside a *detected table* -- as opposed to the raw layout text -- were
-    invisible to the regex pass entirely. This walks a single pipe row
-    directly: find the first cell that looks like a test name, then the
-    first following cell that parses as a plain number (skipping range-like
-    cells such as "13.0-17.0", which won't parse as a single float).
+    Parses Markdown table rows produced by pdfplumber's extract_tables().
     """
     if not line.startswith("|"):
         return None
@@ -125,7 +106,7 @@ def _parse_pipe_row(line: str) -> Optional[dict]:
 
 
 def parse_structured_pdf(file_bytes: bytes) -> List[dict]:
-    """Regex-only extraction, using whatever text pypdf can find."""
+    """Regex-only extraction, using whatever text pdfplumber can find."""
     try:
         text = _extract_pypdf_text(file_bytes)
         return _extract_from_text(text)
@@ -134,12 +115,16 @@ def parse_structured_pdf(file_bytes: bytes) -> List[dict]:
         return []
 
 
-def parse_report(file_bytes: bytes, method: str = "auto") -> dict:
+def parse_report(file_bytes: bytes, method: str = "auto", provider: str = None) -> dict:
     """
-    Safely parses PDF reports combining Regex and LLM, preventing crash errors.
+    Safely parses PDF reports using the 4-Tier Fallback Pipeline:
+      Tier 1: Multimodal Vision LLM (Processes file_bytes natively)
+      Tier 2: Text-Based LLM (Processes raw layout text)
+      Tier 3: OCR Text (For scanned/image-only PDFs)
+      Tier 4: Deterministic Regex Parser
     """
-    # Step 1: Extract text
-    text = _extract_pypdf_text(file_bytes)
+    # Step 1: Pre-extract layout text (or OCR text if standard layer is empty)
+    text = _extract_pypdf_text(file_bytes) or ""
     used_ocr = False
 
     if method == "ocr" or len(text.strip()) < MIN_TEXT_LENGTH_FOR_TEXT_LAYER:
@@ -148,63 +133,46 @@ def parse_report(file_bytes: bytes, method: str = "auto") -> dict:
             text = ocr_text
             used_ocr = True
 
-    if not text.strip():
-        return {"results": [], "method": "manual_required"}
-
-    # Handle explicit LLM mode
-    if method == "llm":
-        try:
-            results = extract_with_llm(text) or []
-            return {"results": results, "method": "ocr_llm" if used_ocr else "llm_extraction"}
-        except Exception as e:
-            print(f"LLM direct extraction failed: {e}")
-            return {"results": [], "method": "llm_error"}
-
-    # Run structured parsing first
-    structured_results = _extract_from_text(text)
-
+    # --- EXPLICIT REGEX / OCR ONLY MODES ---
     if method in ("regex", "ocr"):
+        structured_results = _extract_from_text(text)
         if structured_results:
-            return {"results": structured_results, "method": "ocr_structured" if used_ocr else "structured"}
+            method_tag = "ocr_structured" if used_ocr else "structured"
+            return {"results": structured_results, "method": method_tag}
         return {"results": [], "method": "manual_required"}
 
-    # --- AUTO / HYBRID METHOD ---
-    # Safely fetch LLM results
-    llm_results = []
+    # --- AUTO / HYBRID / VISION / LLM MODES ---
+    # Try Tier 1 Vision & Tier 2 Text via extract_holistic
     try:
-        llm_results = extract_with_llm(text) or []
+        llm_results, method_used = extract_holistic(
+            pdf_bytes=file_bytes,
+            raw_text=text,
+            provider=provider
+        )
+        
+        if llm_results:
+            # Ensure every result is safely mapped with a test_id
+            processed_llm_results = []
+            for r in llm_results:
+                if isinstance(r, dict) and "raw_name" in r:
+                    if "test_id" not in r:
+                        tid, is_known = _resolve_or_synthesize_id(r["raw_name"])
+                        r["test_id"] = tid
+                        r["known"] = is_known
+                    processed_llm_results.append(r)
+            
+            method_tag = f"ocr_{method_used}" if (used_ocr and "ocr" not in method_used) else method_used
+            return {"results": processed_llm_results, "method": method_tag}
+
     except Exception as e:
-        print(f"LLM Extraction Error (falling back to structured): {e}")
+        print(f"LLM Holistic Extraction Error (falling back to structured): {e}")
 
-    # Ensure every LLM result has a test_id so dictionary access doesn't crash
-    processed_llm_results = []
-    for r in llm_results:
-        if isinstance(r, dict):
-            if "test_id" not in r and "raw_name" in r:
-                tid, is_known = _resolve_or_synthesize_id(r["raw_name"])
-                r["test_id"] = tid
-                r["known"] = is_known
-            if "test_id" in r:
-                processed_llm_results.append(r)
+    # --- FINAL SAFETY FALLBACK (Deterministic Regex / Pipe Table Parsing) ---
+    structured_results = _extract_from_text(text)
+    if structured_results:
+        return {"results": structured_results, "method": "ocr_structured" if used_ocr else "structured"}
 
-    # If regex found fewer than 3 items, rely primary on LLM output
-    if len(structured_results) < 3 and processed_llm_results:
-        return {"results": processed_llm_results, "method": "ocr_llm" if used_ocr else "llm_fallback"}
-
-    # Merge results (giving LLM priority) safely
-    merged, seen = [], set()
-    for r in processed_llm_results + structured_results:
-        tid = r.get("test_id")
-        if not tid or tid in seen:
-            continue
-        seen.add(tid)
-        merged.append(r)
-
-    if not merged:
-        return {"results": [], "method": "manual_required"}
-
-    method_tag = "ocr_hybrid" if used_ocr else "hybrid"
-    return {"results": merged, "method": method_tag}
+    return {"results": [], "method": "manual_required"}
 
 
 def _extract_from_text(text: str) -> List[dict]:

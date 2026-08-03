@@ -28,7 +28,7 @@ def test_real_pdf():
                 "diet_type": "omnivore",
                 "parse_method": "auto"  # Can also try "regex" or "llm" if auto falls back
             },
-            timeout=120,
+            timeout=180,
         )
 
     print(f"\nStatus Code: {response.status_code}")

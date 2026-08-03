@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore", message=".*meta tensor.*")
+warnings.filterwarnings("ignore", category=UserWarning)
 import os
 import json
 import faiss
@@ -5,6 +8,7 @@ import numpy as np
 import torch
 from pathlib import Path
 from sentence_transformers import SentenceTransformer
+
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["OMP_NUM_THREADS"] = "1"
