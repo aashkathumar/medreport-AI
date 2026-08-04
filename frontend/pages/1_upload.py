@@ -31,7 +31,7 @@ if uploaded:
                         "sex": profile.get("sex", "unknown"),
                         "diet_type": profile.get("diet_type", "omnivore"),
                     },
-                    timeout=180,
+                    timeout=300,
                 )
                 if resp.status_code == 200:
                     st.session_state.report = resp.json()
