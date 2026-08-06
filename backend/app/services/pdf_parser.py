@@ -6,6 +6,75 @@ import pandas as pd
 from app.services.reference_db import resolve_test_id, finalize_result, dedupe_results
 from app.services.llm_extractor import extract_holistic
 
+# --------------------------------------------------------------------------
+# NEW: source-verification guardrail against LLM hallucination
+# --------------------------------------------------------------------------
+# Observed in production: on reports with no ruled tables (so Tier 1 never
+# fires), the vision/text LLM tier can fabricate entire test panels that
+# were never in the source document at all (confirmed by diffing an actual
+# app output against its real 19-page source: ~100+ tests were returned for
+# a report that genuinely contains ~40, including full tumor-marker and
+# autoantibody panels the source never mentions). This is a correctness/
+# safety issue, not just a missing-reference-range issue - fix it before
+# broadening explanation coverage.
+#
+# This check is deliberately cheap and deterministic (no extra LLM call):
+# every extracted test name's substantive words must actually appear in the
+# pre-extracted document text, and any numeric value must appear verbatim
+# somewhere in the source too. It will not catch a subtly-wrong number
+# attached to a real test name, but it reliably kills wholesale fabrication.
+
+_STRUCTURAL_STOPWORDS = {
+    "test", "tests", "result", "results", "unit", "units", "biological",
+    "reference", "interval", "range", "normal", "value", "values", "method",
+    "count", "level", "levels", "laboratory", "report", "sample", "patient",
+    "name", "date", "page",
+}
+
+
+def _normalize_for_match(s: str) -> str:
+    s = re.sub(r"\(.*?\)", "", s or "")  # drop parentheticals like "(HbA1c)"
+    s = re.sub(r"[^a-z0-9\s]", " ", s.lower())
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def verify_results_against_source(results: List[dict], source_text: str,
+                                   min_ratio: float = 0.6) -> List[dict]:
+    """Drops results whose test name / value can't be found in the
+    deterministically pre-extracted document text. See module note above."""
+    if not source_text:
+        return results  # nothing to verify against - don't block on an empty text layer
+
+    normalized_source = _normalize_for_match(source_text)
+    source_words = set(normalized_source.split())
+
+    verified, dropped = [], []
+    for r in results:
+        name_norm = _normalize_for_match(r.get("raw_name", ""))
+        sig_words = [w for w in name_norm.split() if len(w) > 2 and w not in _STRUCTURAL_STOPWORDS]
+        if not sig_words:
+            sig_words = [w for w in name_norm.split() if w not in _STRUCTURAL_STOPWORDS] or name_norm.split()
+
+        matched = sum(1 for w in sig_words if w in source_words)
+        coverage = matched / max(len(sig_words), 1)
+
+        value_digits = re.sub(r"[^\d.]", "", str(r.get("value", "")))
+        value_present = (not value_digits) or (value_digits in source_text)
+
+        if coverage >= min_ratio and value_present:
+            r["verified"] = True
+            verified.append(r)
+        else:
+            r["verified"] = False
+            dropped.append(r)
+
+    if dropped:
+        names = [d.get("raw_name") for d in dropped][:10]
+        suffix = " ..." if len(dropped) > 10 else ""
+        print(f"⚠️ Dropped {len(dropped)} unverified/likely-hallucinated result(s): {names}{suffix}")
+
+    return verified
+
 PATTERNS = [
     r"([A-Za-z][A-Za-z0-9\s\(\)\/\-]+):\s*([\d\.]+)\s*([a-zA-Z0-9\/\%\u00b5u\u03bc\*\^]+)?",
     r"([A-Za-z][A-Za-z\s\(\)\/\-]{1,30}?)\s{2,}([\d\.]+)\s*([a-zA-Z0-9\/\%\^]+)?",
@@ -265,13 +334,22 @@ def parse_report(
             provider=provider
         )
         if llm_results:
+            # Guardrail: reject any LLM-extracted result that can't be found
+            # in the document itself before trusting it further.
+            llm_results = verify_results_against_source(llm_results, text)
+
             # Tier 1 may have found a few results just below the confidence
             # threshold - merge rather than discard them, they cost nothing
             # and may cover tests the LLM missed.
             merged = dedupe_results(table_results + llm_results)
-            finalized = [finalize_result(r, patient_sex, patient_age) for r in merged]
-            method_tag = f"ocr_{method_used}" if (used_ocr and "ocr" not in method_used) else method_used
-            return {"results": finalized, "method": method_tag}
+
+            # If verification rejected everything and Tier 1 found nothing
+            # either, don't report a false "success" with zero results -
+            # fall through to Tier 4 instead.
+            if merged:
+                finalized = [finalize_result(r, patient_sex, patient_age) for r in merged]
+                method_tag = f"ocr_{method_used}" if (used_ocr and "ocr" not in method_used) else method_used
+                return {"results": finalized, "method": method_tag}
 
     except Exception as e:
         print(f"LLM Holistic Extraction Error (falling back to structured): {e}")

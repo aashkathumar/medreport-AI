@@ -8,7 +8,7 @@ API = "http://127.0.0.1:8000/api/v1"
 
 def test_real_pdf():
     # Update this path if your file name is different
-    pdf_path = os.path.join(os.path.dirname(__file__), "my_real_report.pdf")
+    pdf_path = os.path.join(os.path.dirname(__file__), "sterling-accuris-pathology-sample-report-unlocked.pdf")
     
     if not os.path.exists(pdf_path):
         print(f"❌ File not found: {pdf_path}")
