@@ -3,7 +3,7 @@ import io
 from typing import List, Optional, Tuple
 import pdfplumber
 import pandas as pd
-from app.services.reference_db import resolve_test_id, finalize_result, dedupe_results
+from app.services.reference_db import resolve_test_id, finalize_result, dedupe_results, canonicalize_test_name
 from app.services.llm_extractor import extract_holistic
 
 # --------------------------------------------------------------------------
@@ -41,12 +41,35 @@ def _normalize_for_match(s: str) -> str:
 def verify_results_against_source(results: List[dict], source_text: str,
                                    min_ratio: float = 0.6) -> List[dict]:
     """Drops results whose test name / value can't be found in the
-    deterministically pre-extracted document text. See module note above."""
+    deterministically pre-extracted document text. See module note above.
+
+    CHANGED: matching used to be whole-document - name-words checked for
+    presence anywhere in the doc, and value digits checked with a bare
+    `value_digits in source_text` substring test anywhere in the doc. Two
+    real fabrication cases slipped past that:
+      1. A real test name (e.g. "Creatinine", "Potassium") legitimately
+         appears elsewhere in the report attached to its REAL value, so
+         name-coverage passed even when the value paired with it by the
+         LLM was fabricated.
+      2. The value substring check had no word boundaries, so e.g. a
+         fabricated "44" matched inside the unrelated "44109" printed in
+         a peak-area table on a completely different page.
+    Now: split the source into lines, and only accept a result if its
+    value appears - as a whole number, not a substring - on one of the
+    SAME lines where enough of the test name's significant words appear.
+    This ties the value to the row it claims to come from, not the
+    document at large. It still won't catch a wrong number attached to
+    the right test IF that wrong number happens to also appear on the
+    same line for some other reason, but that's a much narrower gap than
+    before."""
     if not source_text:
         return results  # nothing to verify against - don't block on an empty text layer
 
-    normalized_source = _normalize_for_match(source_text)
-    source_words = set(normalized_source.split())
+    lines = [l for l in source_text.split("\n") if l.strip()]
+    # Keep both forms per line: normalized (for word-coverage matching on
+    # the test name) and raw (for value matching - normalization strips
+    # decimal points, which would break a check like "44.0").
+    line_pairs = [(_normalize_for_match(l), l) for l in lines]
 
     verified, dropped = [], []
     for r in results:
@@ -55,13 +78,21 @@ def verify_results_against_source(results: List[dict], source_text: str,
         if not sig_words:
             sig_words = [w for w in name_norm.split() if w not in _STRUCTURAL_STOPWORDS] or name_norm.split()
 
-        matched = sum(1 for w in sig_words if w in source_words)
-        coverage = matched / max(len(sig_words), 1)
-
         value_digits = re.sub(r"[^\d.]", "", str(r.get("value", "")))
-        value_present = (not value_digits) or (value_digits in source_text)
+        value_pattern = re.compile(rf"(?<!\d){re.escape(value_digits)}(?!\d)") if value_digits else None
 
-        if coverage >= min_ratio and value_present:
+        found = False
+        for norm_line, raw_line in line_pairs:
+            line_words = set(norm_line.split())
+            matched = sum(1 for w in sig_words if w in line_words)
+            coverage = matched / max(len(sig_words), 1)
+            if coverage < min_ratio:
+                continue
+            if value_pattern is None or value_pattern.search(raw_line):
+                found = True
+                break
+
+        if found:
             r["verified"] = True
             verified.append(r)
         else:
@@ -145,8 +176,12 @@ def _resolve_or_synthesize_id(raw_name: str) -> Tuple[str, bool]:
     test_id = resolve_test_id(raw_name)
     if test_id:
         return test_id, True
-    synthetic = re.sub(r"[^A-Z0-9]+", "_", raw_name.upper().strip()).strip("_")
-    return (synthetic or "UNKNOWN_TEST"), False
+    # CHANGED: previously slugged the full raw name verbatim, so
+    # "Creatinine" and "Creatinine (24 hour)" got different synthetic IDs
+    # and never deduped against each other. canonicalize_test_name() strips
+    # only non-distinguishing sample/method/timeframe qualifiers - see
+    # reference_db.py for what it keeps vs strips.
+    return canonicalize_test_name(raw_name), False
 
 
 # --------------------------------------------------------------------------
@@ -160,11 +195,31 @@ def _resolve_or_synthesize_id(raw_name: str) -> Tuple[str, bool]:
 # is the majority case for digital lab report PDFs.
 
 def _extract_tables_with_pages(file_bytes: bytes) -> List[Tuple[int, list]]:
+    """CHANGED: many real lab report PDFs align columns with whitespace
+    only - no visible ruled/bordered grid lines (confirmed on the Sterling
+    Accuris sample report this pipeline was diffed against). pdfplumber's
+    default table detection uses a "lines" strategy and finds nothing on
+    pages like that, so table_results stays below MIN_STRUCTURED_RESULTS
+    and the report gets routed to the LLM vision tier - with its
+    hallucination risk - even though the data is cleanly laid out and
+    extractable for free. Now falls back to a text-position strategy
+    (columns/rows inferred from character alignment) whenever the default
+    ruled-line strategy finds nothing on a page."""
     out = []
     try:
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             for page_num, page in enumerate(pdf.pages, 1):
-                for table in page.extract_tables():
+                tables = page.extract_tables()
+                if not tables:
+                    try:
+                        tables = page.extract_tables(table_settings={
+                            "vertical_strategy": "text",
+                            "horizontal_strategy": "text",
+                        })
+                    except Exception as e:
+                        print(f"pdfplumber text-strategy table extraction failed on page {page_num}: {e}")
+                        tables = []
+                for table in tables:
                     if table:
                         out.append((page_num, table))
     except Exception as e:

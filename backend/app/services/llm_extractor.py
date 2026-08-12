@@ -1,9 +1,10 @@
 import fitz  # PyMuPDF
 import base64
 import json
+import re
 from app.config import settings
 from app.services.llm_service import call_with_fallback
-from app.services.reference_db import resolve_test_id, dedupe_results
+from app.services.reference_db import resolve_test_id, dedupe_results, canonicalize_test_name
 
 # In app/services/llm_extractor.py
 
@@ -32,6 +33,16 @@ range is purely qualitative/non-numeric (e.g. "Negative", "Clear") and can't be 
 programmatically. For tests with a numeric printed range, still fill in your best guess for
 "status", but getting "ref_range" exactly right matters far more - it will be used to compute
 the authoritative status deterministically, overriding your guess.
+
+CRITICAL - DO NOT CONFUSE THE RESULT WITH A REFERENCE-RANGE BOUNDARY:
+Some reference ranges are printed as several named bands across multiple lines, e.g.
+"For Screening: Diabetes: >6.5% / Pre-Diabetes: 5.7% - 6.4% / Non-Diabetes: < 5.7%" or
+"Deficiency: <10 / Insufficiency: 10-30 / Sufficiency: 30-100 / Toxicity: >100".
+Every number in a block like that is a BAND BOUNDARY, not a result. Copy the whole block into
+"ref_range" verbatim. NEVER take one of those boundary numbers and use it as "value". The
+patient's actual result is a single number printed in the "Result" column, directly beside the
+test name, often flagged with an "H" or "L" next to it if abnormal - it is a DIFFERENT number
+from anything in the reference-range block, even when a boundary number looks similar.
 
 Return valid JSON in this EXACT structure:
 {
@@ -141,6 +152,27 @@ def extract_with_llm_text(text: str, provider: str = None) -> list[dict]:
         return []
 
 
+def _value_matches_range_boundary(value, ref_range) -> bool:
+    """CHANGED: safety net for the class of bug seen in production on an
+    HbA1c result - true value 7.10% (flagged High) was extracted as 5.7%,
+    which is actually the "Pre-Diabetes: 5.7% - 6.4%" band boundary from
+    inside the reference-range text, not the printed Result. That single
+    mix-up flipped the reported status from High to "below normal" - the
+    most dangerous direction for a health-literacy tool to be wrong in.
+    This doesn't fully prevent the mistake (the prompt change above is the
+    real fix), but it catches it after the fact: if the numeric value is
+    identical to one of the boundary numbers embedded in ref_range, that's
+    suspicious enough to flag for review rather than trust silently."""
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return False
+    if not ref_range:
+        return False
+    boundary_numbers = [float(n) for n in re.findall(r"-?\d+\.?\d*", str(ref_range))]
+    return any(abs(val - b) < 1e-9 for b in boundary_numbers)
+
+
 def _format_extracted_results(raw_results: list) -> list[dict]:
     """CHANGED: now passes through ref_range (previously dropped entirely),
     and keeps the LLM's raw status separate from the final computed one -
@@ -154,7 +186,15 @@ def _format_extracted_results(raw_results: list) -> list[dict]:
             continue
 
         resolved = resolve_test_id(name)
-        test_id = resolved or name.upper().strip().replace(" ", "_")
+        # CHANGED: previously slugged the full raw name verbatim, so
+        # "Creatinine", "Creatinine, Serum" and "Creatinine (24 hour)"
+        # produced three different synthetic IDs and dedupe_results()
+        # never merged them - each survived as a separate "test" in the
+        # output. canonicalize_test_name() strips only non-distinguishing
+        # sample-type/method/timeframe qualifiers (shared with
+        # pdf_parser.py so every tier agrees on the same ID for the same
+        # analyte).
+        test_id = resolved or canonicalize_test_name(name)
         raw_ref_range = r.get("ref_range")
 
         cleaned.append({
@@ -165,6 +205,7 @@ def _format_extracted_results(raw_results: list) -> list[dict]:
             "ref_range": (str(raw_ref_range).strip() if raw_ref_range else None),
             "status": str(r.get("status", "unknown")).lower().strip(),  # LLM's guess; may be overridden later
             "known": resolved is not None,
+            "needs_review": _value_matches_range_boundary(val, raw_ref_range),
         })
     return cleaned
 

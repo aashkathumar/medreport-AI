@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 import requests
@@ -23,13 +24,30 @@ def call_gemini(system: str, prompt: Union[str, list], max_tokens: int = 2500, m
     
     target_model = model or "gemini-2.0-flash"
     client = genai.GenerativeModel(target_model, system_instruction=system)
-    
-    # Handle vision image payloads vs plain text prompts
+
+    # CHANGED: this used to flatten `prompt` down to ONLY its text blocks,
+    # silently discarding every image_url block. Every "vision" extraction
+    # call therefore sent Gemini nothing but an instruction like "extract
+    # lab results from these images" - with no images attached - and
+    # Gemini would still return confident, well-formed JSON by filling in
+    # a plausible-looking lab report from training data instead of
+    # erroring. That is the actual mechanism behind the wholesale
+    # hallucination seen in production (see pdf_parser.py docstring: ~100+
+    # fabricated tests for a 40-test report). Now builds proper multimodal
+    # parts so Gemini genuinely sees the page images.
     contents = prompt
     if isinstance(prompt, list):
-        # Flatten vision blocks for Gemini SDK
-        text_parts = [b["text"] for b in prompt if b.get("type") == "text"]
-        contents = " ".join(text_parts) if text_parts else "Extract lab results"
+        parts = []
+        for block in prompt:
+            if block.get("type") == "text":
+                parts.append(block["text"])
+            elif block.get("type") == "image_url":
+                data_url = block.get("image_url", {}).get("url", "")
+                if data_url.startswith("data:"):
+                    header, _, b64_data = data_url.partition(",")
+                    mime = header.split(";")[0].replace("data:", "") or "image/png"
+                    parts.append({"mime_type": mime, "data": base64.b64decode(b64_data)})
+        contents = parts if parts else "Extract lab results"
 
     response = client.generate_content(
         contents,
@@ -45,7 +63,16 @@ def call_groq_llama(system: str, prompt: Union[str, list], max_tokens: int = 400
     from groq import Groq
     client = Groq(api_key=settings.groq_api_key)
     target_model = model or settings.groq_model
-    
+
+    # CHANGED: this model is text-only. It used to silently flatten vision
+    # payloads to just their text blocks (dropping every image), so it
+    # "succeeded" on vision-extraction calls without ever seeing a page -
+    # writing a plausible lab report from training data instead of failing
+    # loudly. Now it refuses outright, so call_with_fallback moves on to a
+    # provider that can actually see the images rather than masking the gap.
+    if isinstance(prompt, list) and any(b.get("type") == "image_url" for b in prompt):
+        raise ValueError("call_groq_llama is text-only and cannot process image content blocks.")
+
     user_content = prompt
     if isinstance(prompt, list):
         user_content = " ".join([b["text"] for b in prompt if b.get("type") == "text"])
@@ -65,6 +92,13 @@ def call_groq_llama(system: str, prompt: Union[str, list], max_tokens: int = 400
 
 def call_mistral(system: str, prompt: Union[str, list], max_tokens: int = 2500, model: str = None) -> dict:
     target_model = model or "mistral-small-latest"
+
+    # CHANGED: same issue as call_groq_llama above - this text model used
+    # to silently drop image blocks and hallucinate a confident answer with
+    # no page content behind it. Fail loudly instead.
+    if isinstance(prompt, list) and any(b.get("type") == "image_url" for b in prompt):
+        raise ValueError("call_mistral is text-only and cannot process image content blocks.")
+
     user_content = prompt
     if isinstance(prompt, list):
         user_content = " ".join([b["text"] for b in prompt if b.get("type") == "text"])
@@ -106,6 +140,13 @@ def call_openrouter(system: str, prompt: Union[str, list], max_tokens: int = 250
     )
     
     # Use specified model or fallback to openrouter_model
+    # NOTE: this is the only provider that forwards image content blocks
+    # as-is, so it's the fallback of last resort for vision extraction -
+    # but only if `openrouter_model` (or the model passed in) is actually a
+    # vision-capable model on OpenRouter. If it's a text-only model, the
+    # same silent-drop-and-hallucinate failure mode as the other providers
+    # can happen one level down at OpenRouter's own routing, invisibly to
+    # this code. Worth confirming the configured model explicitly.
     target_model = model or getattr(settings, "openrouter_model", "openrouter/free")
     
     # OpenAI format natively accepts string OR list of content blocks (for vision data URLs)

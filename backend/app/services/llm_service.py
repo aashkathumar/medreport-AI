@@ -32,9 +32,29 @@ def call_with_fallback(
     model_name: str = None
 ) -> dict:
     primary = provider or settings.default_llm_provider
-    # Primary -> Groq -> Mistral -> Gemini -> OpenRouter
-    fallback_sequence = [primary, "groq_llama", "mistral", "gemini", "openrouter"]
-    
+
+    # CHANGED: groq_llama and mistral are text-only models and now refuse
+    # image content blocks explicitly (see llm_providers.py) instead of
+    # silently dropping images and hallucinating. Route vision payloads
+    # straight to the providers that can actually see the pages.
+    # openrouter is tried before gemini here: gemini's free-tier quota on
+    # this project is currently 0 across every metric (not "used up" -
+    # allocated 0), which looks like the API key isn't an AI Studio key
+    # with free-tier access, or the project has it disabled - worth
+    # checking https://aistudio.google.com/apikey directly. Until that's
+    # sorted, putting gemini first just burns a guaranteed-failing call
+    # (with a ~10-60s retry_delay in the error) before ever reaching a
+    # provider that works. Swap the order back once gemini's quota issue
+    # is resolved, if you want it as primary vision provider again.
+    is_vision = isinstance(prompt, list) and any(
+        isinstance(b, dict) and b.get("type") == "image_url" for b in prompt
+    )
+    if is_vision:
+        fallback_sequence = [primary, "openrouter", "gemini"]
+    else:
+        # Primary -> Groq -> Mistral -> Gemini -> OpenRouter
+        fallback_sequence = [primary, "groq_llama", "mistral", "gemini", "openrouter"]
+
     seen = set()
     sequence = [p for p in fallback_sequence if not (p in seen or seen.add(p))]
 
@@ -183,18 +203,27 @@ Return valid JSON in this exact structure:
 
         for t in batch:
             details = exp_map.get(t.test_id, {})
+            # CHANGED: tests with no printed unit (ratios like A/G Ratio,
+            # qualitative results like ABO Type) were coming through with
+            # unit=None, and the fallback text below did f"{t.value}
+            # {t.unit}" - which stringifies None as the literal word
+            # "None" right into the patient-facing explanation and the
+            # results table. Normalize to "" once, here, so it never
+            # reaches any downstream renderer.
+            unit_display = (t.unit or "").strip()
+            result_str = f"{t.value} {unit_display}".strip()
             all_explained.append(
                 ExplainedResult(
                     test_id=t.test_id,
                     raw_name=t.raw_name,
                     value=t.value,
-                    unit=t.unit,
+                    unit=unit_display,
                     status=t.status,
                     normal_range_min=getattr(t, 'normal_range_min', None),
                     normal_range_max=getattr(t, 'normal_range_max', None),
                     source="NHS UK / Medical Consensus",
                     what_it_measures=details.get("what_it_measures", f"Evaluates {t.raw_name} level in sample."),
-                    what_your_result_means=details.get("what_your_result_means", f"Your result is {t.value} {t.unit}."),
+                    what_your_result_means=details.get("what_your_result_means", f"Your result is {result_str}."),
                     lifestyle_suggestions=details.get("lifestyle_suggestions", ["Maintain a healthy balanced diet.", "Stay well hydrated."]),
                     gp_question=details.get("gp_question", "What does this result mean for my overall health?"),
                     disclaimer=details.get("disclaimer", "This explanation is for educational purposes only.")

@@ -91,16 +91,116 @@ def get_reference_data(test_id: str) -> Optional[Dict[str, Any]]:
 
 
 # --------------------------------------------------------------------------
+# NEW: canonical name normalization, shared by every tier's ID synthesis
+# --------------------------------------------------------------------------
+# CHANGED: pdf_parser.py and llm_extractor.py each used to slug the FULL raw
+# test name verbatim into a synthetic test_id when resolve_test_id() found
+# no alias. That meant "Creatinine", "Creatinine, Serum" and "Creatinine
+# (24 hour)" produced three different synthetic IDs, and dedupe_results()
+# below (which keys on test_id) never merged them - the same analyte showed
+# up multiple times with different values in the output. This strips only
+# qualifiers that describe HOW/WHERE the sample was taken, not WHAT is
+# being measured - it deliberately leaves clinically-distinguishing
+# qualifiers alone, e.g. "Direct Bilirubin" / "Total Bilirubin" /
+# "Unconjugated Bilirubin" are genuinely different values and must stay
+# separate test_ids.
+_NON_DISTINGUISHING_QUALIFIERS = re.compile(
+    r"\b(serum|plasma|urine|edta\s*blood|whole\s*blood|fluoride\s*plasma|"
+    r"\d+\s*hour(?:s)?|qualitative|quantitative|random\s*sample)\b",
+    re.IGNORECASE,
+)
+
+
+def canonicalize_test_name(raw_name: str) -> str:
+    """Produces a stable synthetic test_id for tests with no known alias,
+    so the same analyte extracted with slightly different wording across
+    tiers/batches still dedupes to one entry. NOT a substitute for growing
+    ALIAS_MAP - genuinely different phrasings of the same well-known test
+    (e.g. "Fasting Glucose" vs "Glucose (Fasting)") still need a real alias
+    entry to merge; this only strips sample-collection/method noise."""
+    if not raw_name or not isinstance(raw_name, str):
+        return "UNKNOWN_TEST"
+    cleaned = _NON_DISTINGUISHING_QUALIFIERS.sub(" ", raw_name)
+    cleaned = re.sub(r"[^A-Za-z0-9]+", "_", cleaned.upper()).strip("_")
+    cleaned = re.sub(r"_+", "_", cleaned)
+    return cleaned or "UNKNOWN_TEST"
+
+
+# --------------------------------------------------------------------------
 # NEW: parsing the reference range as actually printed on the report
 # --------------------------------------------------------------------------
 # Real reports use several formats, and real OCR/text extraction sometimes
 # inserts stray whitespace (e.g. "6 .0 - 8.0 pH" was seen verbatim in a real
 # report), so we normalize that first.
 
-_RANGE_RE = re.compile(r"(-?\d+\.?\d*)\s*-\s*(-?\d+\.?\d*)")
+# CHANGED: allow an optional unit symbol (e.g. "%") directly after a number
+# and before the dash - printed bands like "5.7% - 6.4%" wouldn't match
+# the old pattern at all, since "%" sat between the digits and the dash.
+_RANGE_RE = re.compile(r"(-?\d+\.?\d*)\s*%?\s*-\s*(-?\d+\.?\d*)\s*%?")
 _LT_RE = re.compile(r"[<\u2264]\s*(-?\d+\.?\d*)")
 _GT_RE = re.compile(r"[>\u2265]\s*(-?\d+\.?\d*)")
 _STRAY_DECIMAL_RE = re.compile(r"(\d)\s+\.\s*(\d)")  # fixes "6 .0" -> "6.0"
+
+# CHANGED: many printed reference ranges are actually several NAMED bands,
+# not one simple low-high pair - e.g. Cholesterol's "Desirable: <200 /
+# Borderline High: 200-239 / High: >240", or HbA1c's "Non-Diabetes: <5.7% /
+# Pre-Diabetes: 5.7-6.4% / Diabetes: >6.5%". The naive single-pass regex
+# above just grabs whichever "number - number" pattern it finds FIRST in
+# the whole string - for Cholesterol that's "200-239" (the *borderline
+# high* band), so a genuinely healthy 189 mg/dL got flagged "Below normal
+# range" in production. _parse_labeled_bands looks for a band whose label
+# reads as the healthy/reference band and uses ONLY that band's numbers.
+_NORMAL_BAND_KEYWORDS = (
+    "desirable", "normal", "optimal", "sufficiency", "negative",
+    "non-reactive", "non reactive", "non-diabetes", "non diabetes",
+    "not diabetic", "good control", "within normal",
+)
+
+_BAND_SEGMENT_RE = re.compile(
+    r"([A-Za-z][A-Za-z \-/]{1,40}?)\s*:\s*([^:]*?)"
+    r"(?=(?:[A-Za-z][A-Za-z \-/]{1,40}?\s*:)|$)"
+)
+
+
+def _parse_labeled_bands(ref_range: str) -> Optional[Tuple[Optional[float], Optional[float]]]:
+    """Returns (low, high) from the band labeled as the healthy/reference
+    range, or None if this text isn't multi-band (fewer than 2 "label:
+    value" segments) or no band reads as the healthy one - callers should
+    fall back to the plain single-range parsing in that case."""
+    if not ref_range:
+        return None
+    segments = _BAND_SEGMENT_RE.findall(ref_range)
+    if len(segments) < 2:
+        return None
+
+    for label, expr in segments:
+        label_l = label.strip().lower()
+        # CHANGED: plain substring containment ("sufficiency" in label)
+        # false-matches "Insufficiency" too, since "sufficiency" sits
+        # inside it with no word break - which would have picked Vitamin
+        # D's Insufficiency band (10-30) instead of Sufficiency (30-100).
+        # Word-boundary matching avoids that.
+        if not any(re.search(rf"\b{re.escape(k)}\b", label_l) for k in _NORMAL_BAND_KEYWORDS):
+            continue
+        m = _RANGE_RE.search(expr)
+        if m:
+            try:
+                return float(m.group(1)), float(m.group(2))
+            except ValueError:
+                pass
+        m = _LT_RE.search(expr)
+        if m:
+            try:
+                return None, float(m.group(1))
+            except ValueError:
+                pass
+        m = _GT_RE.search(expr)
+        if m:
+            try:
+                return float(m.group(1)), None
+            except ValueError:
+                pass
+    return None  # multi-band but no clearly-labeled healthy band - fall through
 
 
 def parse_ref_range_string(ref_range: Optional[str]) -> Optional[Tuple[Optional[float], Optional[float]]]:
@@ -124,6 +224,14 @@ def parse_ref_range_string(ref_range: Optional[str]) -> Optional[Tuple[Optional[
         return None
 
     cleaned = _STRAY_DECIMAL_RE.sub(r"\1.\2", ref_range.strip())
+
+    # CHANGED: try labeled-band parsing first (see _parse_labeled_bands
+    # above). Only takes effect when the text actually has 2+ "label:
+    # value" bands; otherwise returns None immediately and everything
+    # below runs exactly as before.
+    banded = _parse_labeled_bands(cleaned)
+    if banded is not None:
+        return banded
 
     m = _RANGE_RE.search(cleaned)
     if m:
