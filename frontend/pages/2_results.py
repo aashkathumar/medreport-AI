@@ -12,7 +12,34 @@ if not report:
     st.stop()
 
 st.subheader("Overall Summary")
+
+# The backend now reports when generation failed instead of quietly serving
+# placeholder text that reads like a real explanation.
+if report.get("summary_degraded"):
+    st.warning(
+        "The automated summary could not be generated for this report "
+        "(no AI provider was reachable). The text below is a generic "
+        "placeholder -- please rely on the individual results."
+    )
 st.write(report.get("overall_summary", ""))
+
+degraded_ids = set(report.get("degraded_test_ids", []) or [])
+if degraded_ids:
+    st.warning(
+        f"{len(degraded_ids)} result(s) could not be explained automatically "
+        "and are marked below."
+    )
+
+# Explanations that failed post-generation source verification. These are
+# replaced with a GP referral rather than shown, which is the project's
+# stated behaviour when NHS/NIH sources don't cover something.
+ungrounded_ids = set(report.get("ungrounded_test_ids", []) or [])
+if ungrounded_ids:
+    st.info(
+        f"{len(ungrounded_ids)} result(s) are not covered by the approved "
+        "NHS UK / NIH MedlinePlus reference sources. Rather than generate an "
+        "unsourced explanation, this tool directs you to your GP for those."
+    )
 
 col1, col2 = st.columns(2)
 with col1:
@@ -34,6 +61,13 @@ for r in report.get("explained_results", []):
         f"{emoji} **{r['raw_name']}** -- {r['value']} {r['unit']} ({status.upper()})",
         expanded=(status != "normal"),
     ):
+        if r.get("test_id") in degraded_ids:
+            st.error("No automated explanation was generated for this result.")
+        elif r.get("test_id") in ungrounded_ids:
+            st.info(
+                "Not covered by the approved NHS UK / NIH MedlinePlus sources "
+                "- please discuss this result with your GP."
+            )
         st.markdown(f"**What it measures:** {r['what_it_measures']}")
         st.markdown(f"**Your result:** {r['what_your_result_means']}")
         if r.get("lifestyle_suggestions"):
@@ -45,6 +79,13 @@ for r in report.get("explained_results", []):
         nr_max = r.get("normal_range_max")
         if nr_min is not None and nr_max is not None:
             st.caption(f"Normal range: {nr_min} -- {nr_max} {r['unit']} - Source: {r.get('source','NHS UK')}")
+        elif nr_max is not None:
+            st.caption(f"Normal range: up to {nr_max} {r['unit']} - Source: {r.get('source','NHS UK')}")
+        elif nr_min is not None:
+            st.caption(f"Normal range: {nr_min} {r['unit']} and above - Source: {r.get('source','NHS UK')}")
+        # The reference pages this explanation was actually grounded in.
+        for url in r.get("source_urls", []) or []:
+            st.caption(f"Reference: {url}")
         st.caption(r.get("disclaimer", ""))
 
 st.divider()

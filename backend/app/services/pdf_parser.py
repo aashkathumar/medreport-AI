@@ -63,7 +63,23 @@ def verify_results_against_source(results: List[dict], source_text: str,
     same line for some other reason, but that's a much narrower gap than
     before."""
     if not source_text:
-        return results  # nothing to verify against - don't block on an empty text layer
+        # CHANGED: this used to return `results` unverified.
+        #
+        # An empty source text means the PDF had no usable text layer AND OCR
+        # produced nothing -- i.e. a scanned image. That is precisely the case
+        # that gets routed to the vision LLM, and precisely where wholesale
+        # fabrication is most likely. Passing results through unverified meant
+        # the guardrail switched itself off exactly when it was needed, and a
+        # fabricated panel reached the patient-facing explanation with nothing
+        # standing between.
+        #
+        # Failing closed is the correct behaviour for a health tool: the
+        # caller falls through to the deterministic tier and, if that finds
+        # nothing either, the user is told to use manual entry.
+        print("⚠️ No source text to verify LLM extraction against "
+              "(no text layer and no OCR output) -- rejecting unverifiable "
+              "results rather than trusting them.")
+        return []
 
     lines = [l for l in source_text.split("\n") if l.strip()]
     # Keep both forms per line: normalized (for word-coverage matching on
@@ -194,44 +210,87 @@ def _resolve_or_synthesize_id(raw_name: str) -> Tuple[str, bool]:
 # LLM calls whenever the report has a real ruled/structured table - which
 # is the majority case for digital lab report PDFs.
 
-def _extract_tables_with_pages(file_bytes: bytes) -> List[Tuple[int, list]]:
-    """CHANGED: many real lab report PDFs align columns with whitespace
-    only - no visible ruled/bordered grid lines (confirmed on the Sterling
-    Accuris sample report this pipeline was diffed against). pdfplumber's
-    default table detection uses a "lines" strategy and finds nothing on
-    pages like that, so table_results stays below MIN_STRUCTURED_RESULTS
-    and the report gets routed to the LLM vision tier - with its
-    hallucination risk - even though the data is cleanly laid out and
-    extractable for free. Now falls back to a text-position strategy
-    (columns/rows inferred from character alignment) whenever the default
-    ruled-line strategy finds nothing on a page."""
+def _extract_tables_with_pages(file_bytes: bytes) -> Tuple[List[Tuple[int, list]], set]:
+    """Extracts RULED tables (pdfplumber's default "lines" strategy).
+
+    Many real lab PDFs align columns with whitespace only, with no ruled grid
+    (confirmed on the Sterling Accuris sample). A text-position strategy was
+    previously used as a fallback for those pages, but it has been removed:
+    it did more harm than good. On a whitespace-aligned page it infers a grid
+    for the WHOLE page and shreds words across cells (['Total P', 'rotein',
+    ...], ['Test', 'Resul', 't Unit', ...]) - which produced truncated test
+    names, and swept up letterhead and doctors' signature blocks as if they
+    were results. Worse, those junk rows counted towards
+    MIN_STRUCTURED_RESULTS, so the positional extractor that handles these
+    pages correctly never got to run.
+
+    Pages with no ruled table are handled by _extract_columnar_rows()
+    instead, which works from word coordinates. Returns (tables, pages that
+    yielded a ruled table) so the caller knows which pages still need the
+    positional pass.
+    """
     out = []
+    ruled_pages = set()
     try:
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             for page_num, page in enumerate(pdf.pages, 1):
-                tables = page.extract_tables()
-                if not tables:
-                    try:
-                        tables = page.extract_tables(table_settings={
-                            "vertical_strategy": "text",
-                            "horizontal_strategy": "text",
-                        })
-                    except Exception as e:
-                        print(f"pdfplumber text-strategy table extraction failed on page {page_num}: {e}")
-                        tables = []
+                try:
+                    tables = page.extract_tables()
+                except Exception as e:
+                    print(f"pdfplumber table extraction failed on page {page_num}: {e}")
+                    continue
                 for table in tables:
                     if table:
                         out.append((page_num, table))
+                        ruled_pages.add(page_num)
     except Exception as e:
         print(f"pdfplumber table extraction failed: {e}")
-    return out
+    return out, ruled_pages
+
+
+_HEAD_TEST = ("test", "observation", "investigation", "parameter", "analyte")
+_HEAD_RESULT = ("result", "value", "observed")
+_HEAD_UNIT = ("unit",)
+_HEAD_REF = ("ref", "biological", "interval", "normal range", "range")
+
+
+def _find_header_row(table: list) -> Optional[int]:
+    """CHANGED: the header index was hardcoded to table[0].
+
+    On real lab PDFs the column header is NOT the first row - rows 0..12 are
+    letterhead, patient demographics and sample metadata, and the actual
+    "Test | Result | Unit | Biological Ref. Interval" row sits at index 13-19
+    (confirmed on all 19 pages of the Sterling Accuris report). find_col()
+    therefore returned None on row 0 and the whole table was discarded, so
+    Tier 1 returned ZERO rows and every such report fell through to the
+    vision LLM - the expensive, hallucination-prone tier - for data that was
+    sitting right there in the text layer.
+
+    Scans for the first row that looks like a column header instead. Cells
+    are joined before matching because the text-strategy grid fragments
+    words across cells (['Test', 'Resul', 't Unit', 'Biological Re', 'f.']),
+    which broke substring matching on individual cells.
+    """
+    for i, row in enumerate(table[:40]):
+        joined = " ".join((c or "") for c in row).lower()
+        joined = re.sub(r"\s+", " ", joined)
+        has_test = any(k in joined for k in _HEAD_TEST)
+        has_result = any(k in joined for k in _HEAD_RESULT)
+        has_ref = any(k in joined for k in _HEAD_REF)
+        if has_test and (has_result or has_ref):
+            return i
+    return None
 
 
 def _table_to_structured_rows(table: list, page_num: int) -> List[dict]:
     if not table or len(table) < 2:
         return []
 
-    header = [(h or "").strip().lower() for h in table[0]]
+    header_idx = _find_header_row(table)
+    if header_idx is None:
+        return []
+
+    header = [(h or "").strip().lower() for h in table[header_idx]]
 
     def find_col(*keywords):
         for i, h in enumerate(header):
@@ -239,45 +298,389 @@ def _table_to_structured_rows(table: list, page_num: int) -> List[dict]:
                 return i
         return None
 
-    idx_test = find_col("test", "observation")
-    idx_result = find_col("result")
-    idx_unit = find_col("unit")
-    idx_range = find_col("ref", "biological", "interval", "normal")
+    idx_test = find_col(*_HEAD_TEST)
+    idx_result = find_col(*_HEAD_RESULT)
+    idx_unit = find_col(*_HEAD_UNIT)
+    idx_range = find_col(*_HEAD_REF)
 
     if idx_test is None or idx_result is None:
         return []
+
+    table = table[header_idx:]
 
     rows = []
     for row in table[1:]:
         if idx_test >= len(row) or not row[idx_test]:
             continue
-        raw_name = (row[idx_test] or "").strip()
-        value = (row[idx_result] or "").strip() if idx_result < len(row) else ""
-        if not raw_name or not value:
+        built = _build_row(
+            raw_name=(row[idx_test] or ""),
+            value=(row[idx_result] or "") if idx_result < len(row) else "",
+            unit=(row[idx_unit] or "") if idx_unit is not None and idx_unit < len(row) else "",
+            ref_range=(row[idx_range] or "") if idx_range is not None and idx_range < len(row) else "",
+            page_num=page_num,
+        )
+        if built:
+            rows.append(built)
+    return rows
+
+
+# --------------------------------------------------------------------------
+# NEW: positional (columnar) extraction for whitespace-aligned reports
+# --------------------------------------------------------------------------
+# Most real lab PDFs align their columns with whitespace and have no ruled
+# grid. pdfplumber's "text" table strategy does fire on those pages, but it
+# infers a grid for the WHOLE page and shreds words across cells, so the
+# reconstructed rows are unusable ("LABOR","AT","ORY TEST REP","ORT").
+#
+# This works from word positions instead: find the header line, read the x
+# offset of each column label from it, then assign every word on the
+# following lines to a column by its horizontal midpoint. That is how the
+# columns are actually defined on the page, so it survives fragmentation.
+#
+# Measured on the 19-page Sterling Accuris report: 0 rows from the old Tier 1
+# vs 61 rows here, with zero LLM calls - including the HbA1c value (7.10)
+# that the vision tier misread as 5.7 (a reference-band boundary), which had
+# flipped the reported status from High to "below normal".
+
+_ROW_TOLERANCE = 2.5      # points; words within this vertical span are one line
+_COL_TOLERANCE = 6.0      # points of slack when assigning a word to a column
+
+# "H"/"L" abnormal-flag markers printed beside the value.
+_FLAG_RE = re.compile(r"(?:^|\s)([HL])(?:\s|$)")
+
+_QUALITATIVE_VALUES = {
+    "negative", "positive", "nil", "absent", "present", "trace", "clear",
+    "reactive", "non-reactive", "normal", "abnormal", "detected",
+    "not detected", "pale yellow", "yellow", "straw", "cloudy", "turbid",
+}
+
+
+def _page_lines(page) -> List[List[dict]]:
+    """Groups a page's words into visual lines, left to right.
+
+    BUG FOUND (Sterling Accuris sample report, page 3): a hidden word
+    'kidraH' - "Hardik" (from a signature 14 pages later) written backwards -
+    was extracted at x0=-1.35 (off the left edge of the visible page,
+    outside page.width) with direction='ttb' (vertical, not the normal
+    left-to-right reading flow) and upright=False. Its `top` coordinate
+    happened to fall within _ROW_TOLERANCE of the real "Direct LDL" row, so
+    it was grouped into that line and, being the leftmost word, prepended to
+    the test name: "kidraH Direct LDL". This is very likely a leftover
+    artifact from the source PDF having been password-protected and then
+    "unlocked" - not text a human viewing the page would ever see.
+    Excluding non-upright words and words that fall outside the page's
+    visible horizontal bounds keeps line-grouping to the actual printed
+    left-to-right table content.
+    """
+    try:
+        words = page.extract_words(use_text_flow=False, keep_blank_chars=False)
+    except Exception:
+        return []
+    page_width = getattr(page, "width", None)
+    visible = [
+        w for w in words
+        if w.get("upright", True)
+        and w["x0"] >= 0
+        and (page_width is None or w["x1"] <= page_width)
+    ]
+    buckets: dict = {}
+    for w in visible:
+        buckets.setdefault(round(w["top"] / _ROW_TOLERANCE), []).append(w)
+    return [sorted(buckets[k], key=lambda w: w["x0"]) for k in sorted(buckets)]
+
+
+def _header_columns(line_words: List[dict]) -> Optional[dict]:
+    """If this line is a column header, returns {column_name: x_start}."""
+    text = " ".join(w["text"] for w in line_words).lower()
+    has_test = any(k in text for k in _HEAD_TEST)
+    has_result = any(k in text for k in _HEAD_RESULT)
+    has_ref = any(k in text for k in _HEAD_REF)
+    if not (has_test and (has_result or has_ref)):
+        return None
+
+    cols: dict = {}
+    for w in line_words:
+        token = w["text"].lower().strip(".:()")
+        if token.startswith(_HEAD_TEST):
+            cols.setdefault("test", w["x0"])
+        elif token.startswith(_HEAD_RESULT):
+            cols.setdefault("result", w["x0"])
+        elif token.startswith(_HEAD_UNIT):
+            cols.setdefault("unit", w["x0"])
+        elif token.startswith(("biological", "ref", "interval", "normal", "range")):
+            cols.setdefault("ref", w["x0"])
+    return cols if "test" in cols and "result" in cols else None
+
+
+def _bucket_line(line_words: List[dict], cols: dict) -> dict:
+    """Assigns each word on a line to the column it sits under."""
+    ordered = sorted(cols.items(), key=lambda kv: kv[1])
+    out = {name: [] for name, _ in ordered}
+    for w in line_words:
+        mid = (w["x0"] + w["x1"]) / 2
+        target = ordered[0][0]
+        for name, x_start in ordered:
+            if mid >= x_start - _COL_TOLERANCE:
+                target = name
+        out[target].append(w["text"])
+    return {name: " ".join(parts).strip() for name, parts in out.items()}
+
+
+# Lines that are structurally in the table but are not results: signature
+# blocks, qualifications, interpretive prose. Before this filter they were
+# emitted as tests ("Dr. Purvish Darji = Dr. Sanjee", "MD(Path) = MD Path").
+_NON_TEST_NAME_RE = re.compile(
+    r"^\s*(dr\.?|prof\.?|m\.?d\.?|mbbs|dnb|md\s*\(|consultant|pathologist|"
+    r"technologist|signature|verified|authoris|authoriz|approved|"
+    r"end of report|interpretation|note|comment|remark)",
+    re.IGNORECASE,
+)
+
+
+def _is_test_name(name: str) -> bool:
+    name = (name or "").strip()
+    if len(name) < 2 or not re.search(r"[A-Za-z]{2}", name):
+        return False
+    if _NON_TEST_NAME_RE.match(name):
+        return False
+    # Interpretive prose rather than a test label.
+    return len(name.split()) <= 8
+
+
+def _build_row(raw_name: str, value: str, unit: str, ref_range: str,
+               page_num: int) -> Optional[dict]:
+    """Shared validation + cleaning for BOTH deterministic strategies.
+
+    Previously only the grid path existed and it accepted any non-empty
+    value, which is how signature blocks and prose became "tests", and how
+    'L 18.0' was stored verbatim as a value (leaving status 'unknown'
+    because it would not parse as a number).
+    """
+    raw_name = (raw_name or "").strip(" .:-")
+    value, flag = _clean_value(value or "")
+    raw_name, name_flag = _split_name_flag(raw_name)
+    flag = flag or name_flag
+
+    if not _is_test_name(raw_name) or not _is_result_value(value, raw_name):
+        return None
+
+    # Convert the accepted-but-not-plain-numeric forms into their final
+    # stored value: a small count range takes its upper (conservative)
+    # bound; a categorical result (e.g. ABO Type) drops its surrounding
+    # quotes.
+    range_match = _SMALL_COUNT_RANGE_RE.match(value)
+    if range_match:
+        value = range_match.group(2)
+    elif _CATEGORICAL_TEST_NAME_RE.search(raw_name):
+        value = _clean_categorical_value(value)
+
+    unit = _strip_footer(unit)
+    ref_range = _strip_footer(ref_range)
+
+    # Recover the range when the sub-table's columns are offset from the
+    # page header and the unit cell has swallowed it (differential counts:
+    # unit="% 40 - 80", ref="7716 /cmm 2000 - 6700"). Without this the row
+    # is range-checked against the ABSOLUTE count and a perfectly normal
+    # Neutrophils 73% gets flagged low.
+    unit_match = _UNIT_WITH_RANGE_RE.match(unit)
+    if unit_match:
+        unit = unit_match.group("unit")
+        ref_range = unit_match.group("range")
+
+    test_id, is_known = _resolve_or_synthesize_id(raw_name)
+    return {
+        "test_id": test_id,
+        "raw_name": raw_name,
+        "value": value,
+        "unit": unit,
+        "ref_range": ref_range or None,
+        "status": None,   # no LLM guess - computed in finalize_result()
+        "known": is_known,
+        "page": page_num,
+        "flag": flag,     # printed H/L marker, kept for audit
+    }
+
+
+# Page furniture that sits on the same visual line as data and otherwise gets
+# swallowed into the reference-range column ("0 - 14 Dr.Yash Shah MD Path
+# Page 1 of 19"), corrupting the range before it reaches parse_ref_range_string().
+_FOOTER_RE = re.compile(
+    r"\s*(page\s+\d+\s+of\s+\d+|#\s*referred\s+test|dr\.?\s*[a-z]|"
+    r"\bmd\s*path\b|\bm\.?d\.?\b\s*\(|end of report).*$",
+    re.IGNORECASE,
+)
+
+# A unit cell that has absorbed the reference range, e.g. unit="% 40 - 80"
+# on the differential-count sub-table, whose columns don't line up with the
+# page's main header.
+_UNIT_WITH_RANGE_RE = re.compile(
+    r"^(?P<unit>[^\s\d]{1,12})\s+(?P<range>-?\d+\.?\d*\s*-\s*-?\d+\.?\d*)$"
+)
+
+
+def _strip_footer(text: str) -> str:
+    return _FOOTER_RE.sub("", text or "").strip()
+
+
+# BUG FOUND (Sterling Accuris sample report, WBC Count): the printed value
+# "H10570" has no space between the abnormal-flag letter and the number
+# (unlike "H 168.0" elsewhere, which _FLAG_RE already handles), because
+# pdfplumber extracted "H10570" as a single word with no internal gap. That
+# left the value as the non-numeric string "H10570", which failed
+# _is_result_value() and silently dropped the row - the single most
+# clinically notable CBC abnormality in the report (an "H"-flagged WBC
+# count) never reached the patient.
+_GLUED_FLAG_RE = re.compile(r"^([HL])(\d)")
+
+# BUG FOUND (same report, Urine Glucose): the printed value "Present (+)"
+# carries a trailing qualitative marker that isn't in _QUALITATIVE_VALUES,
+# so the exact-match check failed and an abnormal urinalysis result (glucose
+# in urine, not normally present) was silently dropped.
+_TRAILING_QUALITATIVE_MARKER_RE = re.compile(r"\s*[\(\[][+-][\)\]]\s*$")
+
+
+def _clean_value(value: str) -> tuple:
+    """Splits a printed result into (value, abnormal_flag).
+    Lab reports print the flag beside the number ('H 141.0'), and it must not
+    end up inside the value or glued onto the test name."""
+    value = _TRAILING_QUALITATIVE_MARKER_RE.sub("", value)
+    flag_match = _FLAG_RE.search(value)
+    flag = flag_match.group(1).upper() if flag_match else None
+    cleaned = _FLAG_RE.sub(" ", value).strip()
+
+    glued = _GLUED_FLAG_RE.match(cleaned)
+    if glued:
+        flag = flag or glued.group(1)
+        cleaned = cleaned[1:]
+
+    return cleaned, flag
+
+
+def _split_name_flag(name: str) -> tuple:
+    """The printed H/L marker sits between the name and the value, so when it
+    falls left of the Result column it buckets into the NAME ('HbA1c H',
+    'Urea L', 'Fasting Blood Sugar H'). Pull it back off."""
+    match = re.search(r"\s+([HL])$", name)
+    if match:
+        return name[: match.start()].strip(), match.group(1).upper()
+    return name, None
+
+
+# BUG FOUND (same report, Pus Cells / Epithelial Cells): microscopy fields
+# are conventionally printed as a small count range ("1-2 /hpf"), not a
+# single number, so these rows failed the single-number check and were
+# dropped. Takes the upper bound (the conservative reading) as the numeric
+# value, since flag_result() needs a single number to compare against the
+# reference range.
+_SMALL_COUNT_RANGE_RE = re.compile(r"^(\d+)\s*-\s*(\d+)$")
+
+# BUG FOUND (same report, ABO Type): printed as a quoted categorical letter
+# ('"A"'), which is neither numeric nor in _QUALITATIVE_VALUES, so the row
+# was dropped. Blood-group test names are categorical by nature (there is no
+# numeric result), so any short alphabetic token is accepted for them.
+_CATEGORICAL_TEST_NAME_RE = re.compile(r"\b(abo|blood\s*group|rh\s*\(?d\)?)\b", re.IGNORECASE)
+
+
+def _clean_categorical_value(value: str) -> str:
+    return value.strip().strip('"\'').strip()
+
+
+def _is_result_value(value: str, raw_name: str = "") -> bool:
+    if not value:
+        return False
+    if re.fullmatch(r"-?\d+\.?\d*", value):
+        return True
+    if _SMALL_COUNT_RANGE_RE.match(value):
+        return True
+    if value.lower() in _QUALITATIVE_VALUES:
+        return True
+    if _CATEGORICAL_TEST_NAME_RE.search(raw_name):
+        token = _clean_categorical_value(value)
+        return bool(token) and len(token) <= 4 and token.replace(" ", "").isalpha()
+    return False
+
+
+def _columnar_rows_for_page(page, page_num: int) -> List[dict]:
+    lines = _page_lines(page)
+    rows: List[dict] = []
+    cols = None
+
+    for line_words in lines:
+        # A page can carry several sub-tables (e.g. the differential count
+        # under the CBC), each with its own column offsets - so keep watching
+        # for new header lines rather than locking onto the first one.
+        maybe_header = _header_columns(line_words)
+        if maybe_header:
+            cols = maybe_header
+            continue
+        if not cols:
             continue
 
-        test_id, is_known = _resolve_or_synthesize_id(raw_name)
-        rows.append({
-            "test_id": test_id,
-            "raw_name": raw_name,
-            "value": value,
-            "unit": (row[idx_unit].strip() if idx_unit is not None and idx_unit < len(row) and row[idx_unit] else ""),
-            "ref_range": (row[idx_range].strip() if idx_range is not None and idx_range < len(row) and row[idx_range] else None),
-            "status": None,   # no LLM guess to store - computed deterministically in finalize_result
-            "known": is_known,
-            "page": page_num,
-        })
+        cells = _bucket_line(line_words, cols)
+        ref_range = cells.get("ref", "").strip()
+        built = _build_row(
+            raw_name=cells.get("test", ""),
+            value=cells.get("result", ""),
+            unit=cells.get("unit", ""),
+            ref_range=ref_range,
+            page_num=page_num,
+        )
+
+        if built:
+            rows.append(built)
+        elif rows and not cells.get("result", "").strip():
+            # Continuation line of a multi-line reference band, e.g.
+            # Cholesterol's "Desirable: <200 / Borderline High: 200-239 /
+            # High: >240" printed across three lines. Without this the band
+            # is truncated to its first line and _parse_labeled_bands() can't
+            # find the healthy band.
+            continuation = _strip_footer(ref_range)
+            # Only genuine band text - a bare footer or a method annotation is
+            # not part of the range.
+            if continuation and re.search(r"[<>:]|\d", continuation):
+                previous = rows[-1]
+                previous["ref_range"] = f"{previous['ref_range'] or ''} {continuation}".strip()
+
     return rows
+
+
+def _extract_columnar_rows(file_bytes: bytes) -> List[dict]:
+    out: List[dict] = []
+    try:
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            for page_num, page in enumerate(pdf.pages, 1):
+                try:
+                    out.extend(_columnar_rows_for_page(page, page_num))
+                except Exception as e:
+                    print(f"columnar extraction failed on page {page_num}: {e}")
+    except Exception as e:
+        print(f"columnar extraction failed: {e}")
+    return out
 
 
 def parse_structured_tables(file_bytes: bytes) -> List[dict]:
     """TIER 1: free, instant, LLM-free. When it works, it's also the most
     trustworthy tier - ref_range comes straight from a header-mapped column,
-    not an LLM transcription."""
-    tables = _extract_tables_with_pages(file_bytes)
+    not an LLM transcription.
+
+    Two complementary strategies, both deterministic: header-mapped grid
+    tables (best on ruled/bordered reports) and positional columnar
+    extraction (best on whitespace-aligned reports). Results are merged, so a
+    report that only one strategy understands is still handled.
+    """
+    tables, ruled_pages = _extract_tables_with_pages(file_bytes)
     results = []
     for page_num, table in tables:
         results.extend(_table_to_structured_rows(table, page_num))
+
+    # Positional pass for every page that had no ruled table. Done per page
+    # (not "only if the whole document came up short") because a report can
+    # mix both: the Sterling report has one ruled table on page 1 and 18
+    # whitespace-aligned pages behind it, and judging by the document total
+    # let those 18 pages fall through to the vision LLM.
+    columnar = [r for r in _extract_columnar_rows(file_bytes)
+                if r["page"] not in ruled_pages]
+    results.extend(columnar)
     return dedupe_results(results)
 
 

@@ -20,7 +20,7 @@ if uploaded:
         f"{profile.get('sex','unknown')}, {profile.get('diet_type','omnivore')} diet"
     )
     if st.button("Explain my results", type="primary"):
-        with st.spinner("Extracting and explaining your results -- this takes 10-15 seconds..."):
+        with st.spinner("Extracting and explaining your results -- this can take a few minutes for longer reports..."):
             try:
                 resp = requests.post(
                     f"{API}/upload-pdf",
@@ -31,7 +31,7 @@ if uploaded:
                         "sex": profile.get("sex", "unknown"),
                         "diet_type": profile.get("diet_type", "omnivore"),
                     },
-                    timeout=300,
+                    timeout=600,
                 )
                 if resp.status_code == 200:
                     st.session_state.report = resp.json()

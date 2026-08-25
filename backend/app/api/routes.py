@@ -1,33 +1,38 @@
-import io
-import concurrent.futures
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Response
-from fastapi.responses import StreamingResponse
+from fastapi.concurrency import run_in_threadpool
 from app.models.schemas import TestResult, UserProfile, ExplainedResult, RangeStatus
 from app.services.pdf_parser import parse_report
-from app.services.reference_db import get_normal_range, flag_result, get_reference_data
 from app.services.llm_service import explain_all_test_results_batched, generate_summary
 from app.services.pdf_generator import generate_report_pdf
-from app.services.llm_providers import PROVIDERS, get_all_openrouter_models, get_all_groq_models
+from app.config import settings
+from app.services.llm_providers import (
+    PROVIDERS,
+    get_all_openrouter_models,
+    get_all_groq_models,
+    get_all_nvidia_models,
+    get_all_gemini_models,
+    provider_status,
+)
+from app.services.rag_service import index_health
 from app.db import save_report, get_user_reports
 
 router = APIRouter()
 
-MAX_EXPLAIN_WORKERS = 4
-
-
-def _default_ref(test: TestResult) -> dict:
-    return {
-        "source": "General Medical Reference",
-        "plain_english": f"{test.raw_name} test.",
-        "low_means": "Below standard range.",
-        "high_means": "Above standard range.",
-    }
-
 
 @router.get("/llm/providers")
 def get_available_providers():
-    """Returns list of configured provider keys."""
-    return {"providers": list(PROVIDERS.keys())}
+    """Returns each provider with whether it has a credential configured and
+    whether it can accept image (vision) payloads -- listing provider names
+    alone hid the fact that a chain entry had no API key behind it."""
+    return {"providers": provider_status()}
+
+
+@router.get("/rag/health")
+def get_rag_health():
+    """Reports whether the FAISS index actually loaded. Retrieval failures
+    used to be invisible: a missing index just meant every explanation
+    quietly lost its grounding."""
+    return index_health()
 
 
 @router.get("/llm/models/{provider}")
@@ -37,11 +42,14 @@ def get_provider_models(provider: str):
         models = get_all_openrouter_models()
     elif provider == "groq_llama":
         models = get_all_groq_models()
-    # Around line 35 in get_provider_models:
+    elif provider == "nvidia":
+        models = get_all_nvidia_models()
     elif provider == "gemini":
-        models = ["gemini-1.5-flash"]
+        # Was hardcoded to the retired "gemini-1.5-flash"; list what the key
+        # can actually reach.
+        models = get_all_gemini_models()
     elif provider == "mistral":
-        models = ["mistral-small-latest"]
+        models = [settings.mistral_model]
     else:
         raise HTTPException(404, detail=f"Provider '{provider}' not found.")
 
@@ -61,9 +69,41 @@ async def upload_pdf(
 ):
     # 1. Read PDF bytes directly once
     file_bytes = await file.read()
-    
-    # 2. Pass file_bytes and provider down into parse_report
-    parse_result = parse_report(file_bytes, method=parse_method, provider=provider)
+
+    # CHANGED: everything below this point is fully BLOCKING work - pdfplumber,
+    # faiss, `requests`, and the LLM SDKs - and it used to run directly on the
+    # event loop inside this `async def`. For the entire duration of a request
+    # (20s on a small report, minutes on a large one) no other request could be
+    # served at all: /health froze, and a second user appeared to hang. Handing
+    # it to the threadpool keeps the loop free.
+    return await run_in_threadpool(
+        _process_upload, file_bytes, user_id, age, sex, diet_type,
+        parse_method, provider, model_name,
+    )
+
+
+def _process_upload(
+    file_bytes: bytes,
+    user_id: str,
+    age: int,
+    sex: str,
+    diet_type: str,
+    parse_method: str,
+    provider: str,
+    model_name: str,
+):
+    # 2. Pass file_bytes, provider AND the patient demographics down into
+    #    parse_report. CHANGED: sex/age were not forwarded, so
+    #    finalize_result() resolved every sex-specific static range against
+    #    the defaults ("unknown"/30) -- a female patient's haemoglobin was
+    #    range-checked against the male range.
+    parse_result = parse_report(
+        file_bytes,
+        method=parse_method,
+        provider=provider,
+        patient_sex=sex,
+        patient_age=age,
+    )
     raw = parse_result["results"]
 
     if not raw:
@@ -71,39 +111,42 @@ async def upload_pdf(
 
     profile = UserProfile(user_id=user_id, age=age, sex=sex, diet_type=diet_type)
 
+    # CHANGED: this loop used to re-derive status and ranges from the
+    # 21-entry static REFERENCE_DB, discarding what parse_report() had
+    # already computed. finalize_result() resolves each result against the
+    # reference range PRINTED ON THIS REPORT first (the lab's own
+    # method/instrument-specific range), falling back to the static table
+    # only when the document printed nothing parseable -- that priority order
+    # is the whole point of the ref_range work, and re-deriving here inverted
+    # it. Any test outside the static table also lost its range entirely and
+    # showed no normal range in the UI or the PDF.
     test_results = []
     for r in raw:
-        ref = get_reference_data(r["test_id"])
-        nr = get_normal_range(r["test_id"], sex, age) if ref else None
-        
-        # Pass the extracted LLM status as llm_status fallback
-        status = flag_result(
-            value=r["value"], 
-            normal_range=nr, 
-            llm_status=r.get("status")
-        )
-
         test_results.append(TestResult(
             test_id=r["test_id"],
             raw_name=r["raw_name"],
             value=r["value"],
             unit=r.get("unit", ""),
-            status=status,  # <--- Evaluated clinical status
-            normal_range_min=nr["min"] if nr else None,
-            normal_range_max=nr["max"] if nr else None,
+            status=RangeStatus(r["status"]) if r.get("status") else RangeStatus.UNKNOWN,
+            normal_range_min=r.get("normal_range_min"),
+            normal_range_max=r.get("normal_range_max"),
         ))
 
- # 1 single batched LLM call for all tests
-    explained = explain_all_test_results_batched(
+    # 1 single batched LLM call per EXPLAIN_BATCH_SIZE tests
+    explained, degraded_test_ids, ungrounded_test_ids = explain_all_test_results_batched(
         test_results, profile, provider=provider, model_name=model_name
     )
 
     summary = generate_summary(explained, profile, provider=provider, model_name=model_name)
+    summary_degraded = bool(summary.pop("summary_degraded", False))
 
     report_data = {
         "explained_results": [r.model_dump() for r in explained],
         **summary,
         "parse_method": parse_result["method"],
+        "degraded_test_ids": degraded_test_ids,
+        "ungrounded_test_ids": ungrounded_test_ids,
+        "summary_degraded": summary_degraded,
     }
     report_id = save_report(user_id, report_data)
 
@@ -111,6 +154,11 @@ async def upload_pdf(
         "report_id": report_id,
         "parse_method": parse_result["method"],
         "explained_results": [r.model_dump() for r in explained],
+        "degraded_test_ids": degraded_test_ids,
+        # Tests whose generated explanation failed source verification and was
+        # replaced with a GP referral -- surfaced so the constraint is visible.
+        "ungrounded_test_ids": ungrounded_test_ids,
+        "summary_degraded": summary_degraded,
         **summary,
     }
 
@@ -148,6 +196,7 @@ async def download_pdf(data: dict):
                     normal_range_min=item.get("normal_range_min"),
                     normal_range_max=item.get("normal_range_max"),
                     source=item.get("source", "NHS UK / Medical Consensus"),
+                    source_urls=item.get("source_urls", []) or [],
                     what_it_measures=item.get("what_it_measures", ""),
                     what_your_result_means=item.get("what_your_result_means", ""),
                     lifestyle_suggestions=item.get("lifestyle_suggestions", []),

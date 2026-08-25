@@ -28,7 +28,9 @@ def test_real_pdf():
                 "diet_type": "omnivore",
                 "parse_method": "auto"  # Can also try "regex" or "llm" if auto falls back
             },
-            timeout=180,
+            # Full pipeline: batched LLM calls per test plus a summary pass,
+            # legitimately ~5-6 minutes -- see smoke_test.py for the same reasoning.
+            timeout=600,
         )
 
     print(f"\nStatus Code: {response.status_code}")

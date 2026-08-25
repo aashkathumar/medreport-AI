@@ -56,8 +56,8 @@ def generate_report_pdf(
         Paragraph(f"Prepared: {datetime.now().strftime('%d %B %Y')}", body_s),
         HRFlowable(width="100%", thickness=1, color=BLUE, spaceAfter=8),
         Paragraph(
-            "This document is for health literacy purposes only and does not "
-            "replace medical advice. Always discuss results with your GP.",
+            "MedReport AI is a technical prototype for educational and GP-preparation purposes only. "
+            "It does not provide medical diagnosis or replace consultation with a qualified GP.",
             disc_s,
         ),
         Spacer(1, 10),
@@ -101,9 +101,16 @@ def generate_report_pdf(
             story.append(Paragraph("<b>Lifestyle suggestions:</b>", body_s))
             for sug in r.lifestyle_suggestions:
                 story.append(Paragraph(f"- {sug}", body_s))
+        # Cite the actual retrieved reference pages, not just a source label,
+        # so a reader (or an examiner) can check any explanation against the
+        # NHS/MedlinePlus page it was grounded in.
+        source_line = f"<i>Source: {r.source}</i>"
+        for url in getattr(r, "source_urls", []) or []:
+            source_line += f'<br/><font size="7">{url}</font>'
+
         story += [
             Paragraph(f"<b>Ask your GP:</b> {r.gp_question}", body_s),
-            Paragraph(f"<i>Source: {r.source}</i>", disc_s),
+            Paragraph(source_line, disc_s),
             Spacer(1, 10),
         ]
 
@@ -112,8 +119,8 @@ def generate_report_pdf(
         Paragraph(closing_message, body_s),
         Spacer(1, 6),
         Paragraph(
-            "MedReport AI is an educational tool. All reference ranges are "
-            "sourced from NHS UK and NIH MedlinePlus.",
+            "Educational tool evaluated on synthetic test data. Reference texts sourced from NHS UK "
+            "(Open Government Licence v3.0) and NIH MedlinePlus (Public Domain).",
             disc_s,
         ),
     ]

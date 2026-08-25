@@ -37,7 +37,11 @@ def test_upload_with_sample_pdf():
                 "sex": "female", 
                 "diet_type": "vegetarian"
             },
-            timeout=120,
+            # The pipeline makes batched LLM calls for every test plus a
+            # summary pass; a full report legitimately takes ~5-6 minutes.
+            # At 120s this timed out while the server was still working and
+            # the smoke test failed on every run.
+            timeout=600,
         )
 
     print(f"Upload PDF Status: {r.status_code}")

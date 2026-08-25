@@ -1,4 +1,5 @@
 import fitz  # PyMuPDF
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import base64
 import json
 import re
@@ -99,8 +100,7 @@ def extract_with_vision(pdf_bytes: bytes, provider: str = None) -> list[dict]:
     if not images:
         return []
 
-    all_results = []
-    for batch_start in range(0, len(images), VISION_BATCH_SIZE):
+    def _run_batch(batch_start: int) -> list[dict]:
         batch = images[batch_start:batch_start + VISION_BATCH_SIZE]
         page_range = f"{batch_start + 1}-{batch_start + len(batch)}"
 
@@ -117,16 +117,32 @@ def extract_with_vision(pdf_bytes: bytes, provider: str = None) -> list[dict]:
                 system=EXTRACTION_SYSTEM,
                 prompt=content_blocks,
                 max_tokens=4000,
-                provider=provider
+                provider=provider,
+                capability="vision",   # routes to vision_fallback_chain only
             )
             results = data.get("results", []) if isinstance(data, dict) else []
             formatted = _format_extracted_results(results)
             for r in formatted:
                 r["page_range"] = page_range
-            all_results.extend(formatted)
+            return formatted
         except Exception as e:
-            print(f"⚠️ Vision batch (pages {page_range}) failed across all providers: {e}")
-            continue  # one bad batch shouldn't cost the rest of the report
+            print(f"Vision batch (pages {page_range}) failed across all providers: {e}")
+            return []  # one bad batch shouldn't cost the rest of the report
+
+    # CHANGED: batches were issued strictly serially. A 19-page report is 5
+    # batches carrying ~2.6 MB of base64 page images each (12.9 MB total);
+    # back-to-back that is minutes of mostly-upload wall time before the user
+    # sees anything. They are independent, so fan them out (bounded, to stay
+    # inside free-tier rate limits) and keep page order in the merged output.
+    starts = list(range(0, len(images), VISION_BATCH_SIZE))
+    workers = max(1, min(settings.llm_max_concurrency, len(starts)))
+    batched: list[list[dict]] = [[] for _ in starts]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_run_batch, start): i for i, start in enumerate(starts)}
+        for future in as_completed(futures):
+            batched[futures[future]] = future.result()
+
+    all_results = [r for group in batched for r in group]
 
     return dedupe_results(all_results)
 
@@ -143,7 +159,8 @@ def extract_with_llm_text(text: str, provider: str = None) -> list[dict]:
             system=EXTRACTION_SYSTEM,
             prompt=prompt,
             max_tokens=4000,
-            provider=provider
+            provider=provider,
+            capability="text",
         )
         results = data.get("results", []) if isinstance(data, dict) else []
         return dedupe_results(_format_extracted_results(results))

@@ -1,0 +1,6 @@
+{
+  "embed_model": "all-MiniLM-L6-v2",
+  "metric": "cosine",
+  "dimensions": 384,
+  "chunk_count": 457
+}

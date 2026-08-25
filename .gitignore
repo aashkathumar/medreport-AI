@@ -1,5 +1,9 @@
 .env
 backend/.env
+# Any .env variant -- backups/copies hold the same live API keys as .env
+# itself and were NOT covered by the two exact-path rules above.
+.env.*
+**/.env.*
 __pycache__/
 *.pyc
 *.egg-info/
