@@ -130,6 +130,7 @@ def _process_upload(
             status=RangeStatus(r["status"]) if r.get("status") else RangeStatus.UNKNOWN,
             normal_range_min=r.get("normal_range_min"),
             normal_range_max=r.get("normal_range_max"),
+            specimen=r.get("specimen"),
         ))
 
     # 1 single batched LLM call per EXPLAIN_BATCH_SIZE tests

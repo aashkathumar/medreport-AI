@@ -160,11 +160,19 @@ def index_health() -> dict[str, Any]:
 # Words that appear in almost every lab-reference page title and so prove
 # nothing about topical relatedness ("Blood Glucose Test" vs "Blood Urea
 # Nitrogen" share "blood" without being related).
+# BUG FOUND (PK0016.pdf): "Urine Quantity" - a genuinely uncovered test (no
+# NHS/NIH page discusses urine specimen volume) - passed this guard anyway
+# and grounded on "Blood in Urine", an unrelated topic, because "urine" is
+# the only word the two share and it wasn't excluded here the way "blood"
+# already was. "urine"/"urinary" appear in nearly every urinalysis page
+# title, so - exactly like "blood" or "test" - sharing that word proves
+# specimen type, not topical relatedness.
 _ANCHOR_STOPWORDS = frozenset({
     "test", "tests", "testing", "blood", "level", "levels", "count", "counts",
     "panel", "result", "results", "screening", "screen", "serum", "plasma",
     "total", "normal", "range", "ranges", "what", "mean", "means", "your",
     "the", "and", "for", "with", "this", "that", "measure", "measures",
+    "urine", "urinary",
 })
 
 

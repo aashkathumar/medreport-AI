@@ -107,10 +107,74 @@ GROUNDING_ALIASES = {
     "TRANSFERRIN_SATURATION": "IRON",
 }
 
+# BUG FOUND (Sterling Accuris report, urinalysis panel): "Bilirubin" and
+# "Red Cells" are printed with those bare names on BOTH the liver panel
+# (blood) and the urinalysis panel (urine) - genuinely different tests with
+# genuinely different reference pages. With no specimen information,
+# grounding always cited the blood page for both, producing "No bilirubin
+# was detected in your blood" as the explanation for a urine dipstick
+# result. pdf_parser.py now tags each row with the specimen its page's
+# section heading indicated ('urine' or None/blood) - this redirects
+# grounding for the ambiguous ids to the urine-specific corpus page ONLY
+# when that tag says urine, leaving the blood case (the default) untouched.
+SPECIMEN_GROUNDING_ALIASES = {
+    ("BILIRUBIN", "urine"): "URINE_BILIRUBIN",
+    ("RED_CELLS", "urine"): "URINE_BLOOD",
+    ("PUS_CELLS", "urine"): "URINE_LEUKOCYTES",
+    ("COLOUR", "urine"): "URINE_COLOUR",
+    # "pH" on a urinalysis panel synthesises to the bare id "PH" (no ALIAS_MAP
+    # entry for the unqualified word), missing the existing curated
+    # URINE_PH entry entirely - same class of bug as COLOUR above, just a
+    # different id, and initially missed in the same fix pass.
+    ("PH", "urine"): "URINE_PH",
+    # BUG FOUND (PK0016.pdf, a different lab): "Blood [In Urine]" -> BLOOD -
+    # a different synthesized id than Sterling's "Red Cells" -> RED_CELLS,
+    # same underlying test, needs its own redirect entry.
+    ("BLOOD", "urine"): "URINE_BLOOD",
+    # BUG FOUND (PK0016.pdf): "Urinary RBC" -> RBC without a redirect
+    # grounded on the BLOOD RBC-count page (a semantic near-match, since
+    # both are literally "counting red blood cells") - but urine microscopy
+    # RBC and a blood RBC count are different tests measuring different
+    # things. The correct reference for RBC-in-urine is the same
+    # "blood in urine" page as the dipstick blood test above.
+    ("RBC", "urine"): "URINE_BLOOD",
+    # These three already have curated corpus pages tagged URINE_PROTEIN/
+    # URINE_KETONES/URINE_NITRITES (Sterling's report resolves to them via
+    # a direct ALIAS_MAP entry keyed on "urine_protein" etc, since it prints
+    # "Urine Protein"). A lab printing bare "Protein"/"Ketones"/"Nitrites"
+    # on a urinalysis panel has no such alias and needs the specimen tag
+    # to find the same page.
+    ("PROTEIN", "urine"): "URINE_PROTEIN",
+    ("KETONES", "urine"): "URINE_KETONES",
+    ("NITRITES", "urine"): "URINE_NITRITES",
+    # BUG FOUND (found while auditing for this exact risk class): "Urinary
+    # Glucose" canonicalises to bare "GLUCOSE" - the same id as blood
+    # glucose, which HAS a curated entry (blood_tests.json) that matched
+    # BEFORE any redirect ran, silently substituting "Blood glucose measures
+    # the amount of sugar in your blood..." for a urine dipstick result,
+    # where mere presence (not a concentration) is the abnormal finding.
+    ("GLUCOSE", "urine"): "URINE_GLUCOSE",
+}
 
-def grounding_test_id(test_id: str) -> str:
+# Other curated blood-test ids (blood_tests.json) that a "Urinary X"-style
+# name would canonicalise onto identically, if a report used that phrasing:
+# CREATININE, HGB, TSH, ALT, CHOL, HDL, LDL, WBC, PLT, CRP, FERRITIN, VIT_D,
+# B12, HBA1C. None of these has been observed in a real report yet (unlike
+# GLUCOSE above, which was), and none currently has a matching URINE_*
+# curated entry to redirect to even if it were - so a fix here would be
+# speculative rather than verified. Flagging as a known risk class: if a
+# future report shows e.g. "Urinary Creatinine" grounding on the blood
+# creatinine page, this dict is where the fix belongs, the same way
+# GLUCOSE was fixed above.
+
+
+def grounding_test_id(test_id: str, specimen: Optional[str] = None) -> str:
     """The test_id to retrieve reference passages under. Identity-preserving
     for everything except the redirects above."""
+    if specimen:
+        specimen_redirect = SPECIMEN_GROUNDING_ALIASES.get((test_id, specimen))
+        if specimen_redirect:
+            return specimen_redirect
     return GROUNDING_ALIASES.get(test_id, test_id)
 
 
@@ -227,8 +291,23 @@ def get_reference_data(test_id: str) -> Optional[Dict[str, Any]]:
 # "Unconjugated Bilirubin" are genuinely different values and must stay
 # separate test_ids.
 _NON_DISTINGUISHING_QUALIFIERS = re.compile(
-    r"\b(serum|plasma|urine|edta\s*blood|whole\s*blood|fluoride\s*plasma|"
+    r"\b(serum|plasma|urine|urinary|edta\s*blood|whole\s*blood|fluoride\s*plasma|"
     r"\d+\s*hour(?:s)?|qualitative|quantitative|random\s*sample)\b",
+    re.IGNORECASE,
+)
+
+# BUG FOUND (PK0016.pdf, a different lab's urinalysis format): this lab
+# prints "Urinary pH" / "Urinary Specific Gravity" where Sterling Accuris
+# printed bare "pH" / "Specific Gravity" and "Blood [In Urine]" where
+# Sterling printed bare "Red Cells" - two different naming conventions for
+# the exact same tests, producing different synthetic ids (URINARY_PH vs
+# PH; BLOOD_IN vs RED_CELLS) that neither ALIAS_MAP nor
+# SPECIMEN_GROUNDING_ALIASES recognised as the same thing. Stripping
+# "urinary" (above) collapses the first case onto the ids already handled.
+# This strips the "[In Urine]" / "(In Blood)" bracketed specimen note some
+# labs append, collapsing the second case the same way.
+_BRACKETED_SPECIMEN_NOTE = re.compile(
+    r"[\[\(]\s*in\s+(urine|blood|serum|plasma|stool|csf)\s*[\]\)]",
     re.IGNORECASE,
 )
 
@@ -242,7 +321,8 @@ def canonicalize_test_name(raw_name: str) -> str:
     entry to merge; this only strips sample-collection/method noise."""
     if not raw_name or not isinstance(raw_name, str):
         return "UNKNOWN_TEST"
-    cleaned = _NON_DISTINGUISHING_QUALIFIERS.sub(" ", raw_name)
+    cleaned = _BRACKETED_SPECIMEN_NOTE.sub(" ", raw_name)
+    cleaned = _NON_DISTINGUISHING_QUALIFIERS.sub(" ", cleaned)
     cleaned = re.sub(r"[^A-Za-z0-9]+", "_", cleaned.upper()).strip("_")
     cleaned = re.sub(r"_+", "_", cleaned)
     return cleaned or "UNKNOWN_TEST"

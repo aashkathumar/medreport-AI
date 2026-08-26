@@ -42,7 +42,19 @@ def _build_grounding(test: TestResult) -> Dict[str, Any]:
     sources: List[Dict[str, str]] = []
     source_labels: List[str] = []
 
-    ref = get_reference_data(test.test_id)
+    # BUG FOUND: this curated-JSON lookup used test.test_id directly, before
+    # any specimen redirect. "Urinary Glucose" resolves (via ALIAS_MAP) to
+    # the same test_id as blood glucose - "GLUCOSE" - and blood_tests.json
+    # has a curated entry for it, so this branch matched FIRST and returned
+    # "Blood glucose measures the amount of sugar in your blood..." as the
+    # explanation for a urine dipstick result, where the clinical meaning is
+    # entirely different (presence itself is abnormal, not a concentration
+    # threshold). The RAG retrieval below already applied the specimen
+    # redirect; this curated-lookup step - checked first and never
+    # overridden - did not, so the fix had to close this path too.
+    resolved_id = grounding_test_id(test.test_id, specimen=getattr(test, "specimen", None))
+
+    ref = get_reference_data(resolved_id)
     if ref:
         curated = [ref.get("plain_english", "")]
         if status == "low" and ref.get("low_means"):
@@ -56,8 +68,7 @@ def _build_grounding(test: TestResult) -> Dict[str, Any]:
             source_labels.append(label)
 
     try:
-        passages = retrieve_context(test.raw_name, k=RAG_PASSAGES_PER_TEST,
-                                    test_id=grounding_test_id(test.test_id))
+        passages = retrieve_context(test.raw_name, k=RAG_PASSAGES_PER_TEST, test_id=resolved_id)
     except Exception:
         passages = []
     has_rag = False
@@ -701,6 +712,18 @@ def explain_all_test_results_batched(
         unit_display = (test.unit or "").strip()
         result_str = f"{test.value} {unit_display}".strip()
 
+        # BUG FOUND (Sterling Accuris report, Nitrite): source/source_urls
+        # were always taken from `grounding`, regardless of whether the
+        # DISPLAYED text actually came from it. When verification rejected
+        # the generated explanation (above) or the model omitted this test
+        # from its batch response, the real NHS/NIH page was still cited
+        # next to generic fallback copy ("Evaluates Nitrite levels in the
+        # body...") that has nothing to do with it - reading as sourced when
+        # nothing shown was. Only attribute a source to text that actually
+        # passed verification.
+        source_label = grounding["source_label"] if details else "Not independently verified"
+        source_urls = [s["url"] for s in grounding["sources"]] if details else []
+
         all_explained.append(
             ExplainedResult(
                 test_id=test.test_id,
@@ -710,8 +733,8 @@ def explain_all_test_results_batched(
                 status=test.status,
                 normal_range_min=getattr(test, "normal_range_min", None),
                 normal_range_max=getattr(test, "normal_range_max", None),
-                source=grounding["source_label"],
-                source_urls=[s["url"] for s in grounding["sources"]],
+                source=source_label,
+                source_urls=source_urls,
                 what_it_measures=details.get("what_it_measures", f"Evaluates {test.raw_name} levels in the body."),
                 what_your_result_means=details.get("what_your_result_means", f"Your result is {result_str}. Please review this value with your GP."),
                 lifestyle_suggestions=details.get("lifestyle_suggestions", ["Maintain balanced nutrition and regular physical activity."]),

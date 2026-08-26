@@ -210,7 +210,7 @@ def _resolve_or_synthesize_id(raw_name: str) -> Tuple[str, bool]:
 # LLM calls whenever the report has a real ruled/structured table - which
 # is the majority case for digital lab report PDFs.
 
-def _extract_tables_with_pages(file_bytes: bytes) -> Tuple[List[Tuple[int, list]], set]:
+def _extract_tables_with_pages(file_bytes: bytes) -> Tuple[List[Tuple[int, list, Optional[str]]], set]:
     """Extracts RULED tables (pdfplumber's default "lines" strategy).
 
     Many real lab PDFs align columns with whitespace only, with no ruled grid
@@ -239,13 +239,46 @@ def _extract_tables_with_pages(file_bytes: bytes) -> Tuple[List[Tuple[int, list]
                 except Exception as e:
                     print(f"pdfplumber table extraction failed on page {page_num}: {e}")
                     continue
+                if not tables:
+                    continue
+                specimen = _page_specimen(page.extract_text() or "")
                 for table in tables:
                     if table:
-                        out.append((page_num, table))
+                        out.append((page_num, table, specimen))
                         ruled_pages.add(page_num)
     except Exception as e:
         print(f"pdfplumber table extraction failed: {e}")
     return out, ruled_pages
+
+
+# BUG FOUND (Sterling Accuris report, Bilirubin / Red Cells on the urinalysis
+# page): the same analyte name is used for both a blood test and a urine
+# test ("Bilirubin" appears on the liver panel AND the urinalysis panel;
+# "Red Cells" means RBC count in blood but cell count in urine microscopy).
+# Nothing tracked which SECTION of the report a row was extracted from, so
+# grounding treated every "Bilirubin" identically and always cited the blood
+# page - producing "No bilirubin was detected in your blood" as the
+# explanation for a urine dipstick result. Detecting a urinalysis section
+# heading per page and tagging rows with it lets grounding disambiguate.
+_URINE_SECTION_RE = re.compile(
+    r"\b(urinalysis|urine\s+(examination|analysis|routine|r\s*/\s*e)|"
+    r"routine\s+urine\s+examination|"
+    # Real-world phrasing confirmed on the Sterling Accuris report: the page
+    # header prints "Sample Type : Urine", not any of the section-heading
+    # words above - the original patterns matched nothing on real data.
+    r"sample\s+type\s*:?\s*urine|"
+    r"physical\s*&?\s*chemical\s+examination)\b",
+    re.IGNORECASE,
+)
+
+
+def _page_specimen(page_text: str) -> Optional[str]:
+    """Returns 'urine' if this page's text contains a urinalysis section
+    heading, else None (caller defaults ambiguous cases to blood/serum,
+    which is the common case and preserves existing behaviour)."""
+    if page_text and _URINE_SECTION_RE.search(page_text):
+        return "urine"
+    return None
 
 
 _HEAD_TEST = ("test", "observation", "investigation", "parameter", "analyte")
@@ -282,7 +315,7 @@ def _find_header_row(table: list) -> Optional[int]:
     return None
 
 
-def _table_to_structured_rows(table: list, page_num: int) -> List[dict]:
+def _table_to_structured_rows(table: list, page_num: int, specimen: Optional[str] = None) -> List[dict]:
     if not table or len(table) < 2:
         return []
 
@@ -318,6 +351,7 @@ def _table_to_structured_rows(table: list, page_num: int) -> List[dict]:
             unit=(row[idx_unit] or "") if idx_unit is not None and idx_unit < len(row) else "",
             ref_range=(row[idx_range] or "") if idx_range is not None and idx_range < len(row) else "",
             page_num=page_num,
+            specimen=specimen,
         )
         if built:
             rows.append(built)
@@ -448,7 +482,7 @@ def _is_test_name(name: str) -> bool:
 
 
 def _build_row(raw_name: str, value: str, unit: str, ref_range: str,
-               page_num: int) -> Optional[dict]:
+               page_num: int, specimen: Optional[str] = None) -> Optional[dict]:
     """Shared validation + cleaning for BOTH deterministic strategies.
 
     Previously only the grid path existed and it accepted any non-empty
@@ -498,6 +532,8 @@ def _build_row(raw_name: str, value: str, unit: str, ref_range: str,
         "known": is_known,
         "page": page_num,
         "flag": flag,     # printed H/L marker, kept for audit
+        "specimen": specimen,  # 'urine' if this row's page had a urinalysis
+                                # section heading, else None (assume blood/serum)
     }
 
 
@@ -604,6 +640,7 @@ def _columnar_rows_for_page(page, page_num: int) -> List[dict]:
     lines = _page_lines(page)
     rows: List[dict] = []
     cols = None
+    specimen = _page_specimen(page.extract_text() or "")
 
     for line_words in lines:
         # A page can carry several sub-tables (e.g. the differential count
@@ -624,6 +661,7 @@ def _columnar_rows_for_page(page, page_num: int) -> List[dict]:
             unit=cells.get("unit", ""),
             ref_range=ref_range,
             page_num=page_num,
+            specimen=specimen,
         )
 
         if built:
@@ -670,8 +708,8 @@ def parse_structured_tables(file_bytes: bytes) -> List[dict]:
     """
     tables, ruled_pages = _extract_tables_with_pages(file_bytes)
     results = []
-    for page_num, table in tables:
-        results.extend(_table_to_structured_rows(table, page_num))
+    for page_num, table, specimen in tables:
+        results.extend(_table_to_structured_rows(table, page_num, specimen))
 
     # Positional pass for every page that had no ruled table. Done per page
     # (not "only if the whole document came up short") because a report can
