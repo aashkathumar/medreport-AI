@@ -306,6 +306,35 @@ def _verify_grounded(
     return True, "ok"
 
 
+def _references_other_test(gp_question: str, own_name: str, other_names: List[str]) -> Optional[str]:
+    """Catches a gp_question that names a DIFFERENT test from this batch.
+
+    BUG FOUND (Sterling Accuris report, Nitrite): Nitrite's gp_question read
+    "Could you explain the significance of the pus cells and epithelial cells
+    in my urinalysis results?" -- correctly cited, but about two other tests
+    later in the same batch, not Nitrite. _verify_grounded did not catch this
+    because it checks the FOUR generated fields as one concatenated blob:
+    Nitrite's other three fields were genuinely on-topic, so the blob as a
+    whole shared plenty of vocabulary with the nitrite reference context, and
+    "pus cells"/"epithelial cells" introduced no unsourced number either. A
+    single contaminated field rode through on the correctness of the rest.
+
+    This checks gp_question in isolation against every OTHER test's name in
+    the batch: if a batch-mate's distinguishing words (its name minus
+    whatever words it shares with the test actually being explained) all
+    appear in the gp_question, the field is describing that other test.
+    """
+    own_tokens = _content_tokens(own_name)
+    q_tokens = _content_tokens(gp_question)
+    if not q_tokens:
+        return None
+    for other in other_names:
+        distinguishing = _content_tokens(other) - own_tokens
+        if distinguishing and distinguishing <= q_tokens:
+            return other
+    return None
+
+
 # provider -> (unix time the circuit re-closes, reason). Module-level and
 # lock-guarded because batches run concurrently in a thread pool and share it.
 _CIRCUIT: Dict[str, Tuple[float, str]] = {}
@@ -697,6 +726,12 @@ def explain_all_test_results_batched(
                 grounding["text"],
                 allowed_numbers=_allowed_numbers_for(test),
             )
+            if ok:
+                other_names = [t.raw_name for t, _ in batches[batch_index] if t.test_id != test.test_id]
+                contaminated = _references_other_test(details.get("gp_question", ""), test.raw_name, other_names)
+                if contaminated:
+                    ok = False
+                    reason = f"gp_question references a different test in this batch: {contaminated}"
             if not ok:
                 print(f"Rejected ungrounded explanation for {test.test_id}: {reason}")
                 details = {}

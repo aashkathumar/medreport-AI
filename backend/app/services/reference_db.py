@@ -69,6 +69,12 @@ ALIAS_MAP = {
     "rdw_cv": "RDW_CV", "rdw": "RDW",
     "abo_type": "ABO_TYPE", "blood_group": "ABO_TYPE",
     "rh_d_type": "RH_D_TYPE", "rh_type": "RH_D_TYPE", "rhesus_factor": "RH_D_TYPE",
+    # Lets "HIV I & II Ab/Ag with P24 Ag" (Sterling Accuris's exact wording)
+    # resolve to the same "HIV" id the corpus's hiv-screening-test page is
+    # already tagged with - without this it canonicalised to the report's
+    # entire wording as one synthetic id, which no source could ever match.
+    "hiv_i_ii_ab_ag_with_p24_ag": "HIV", "hiv_ab_ag": "HIV", "hiv_screening": "HIV",
+    "hbsag": "HBSAG", "hepatitis_b_surface_antigen": "HBSAG",
 }
 
 # BUG FOUND (Sterling Accuris sample report, Rh (D) Type): flag_result()'s

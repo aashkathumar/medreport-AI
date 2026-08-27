@@ -163,9 +163,17 @@ SOURCES = [
     {"ids": ["HIV"], "src": MEDLINEPLUS, "url": _MP.format("hiv-screening-test")},
 
     # --- Urinalysis ---------------------------------------------------------
+    # BUG FOUND: URINE_COLOUR was previously patched directly into the built
+    # rag_chunks.json (to fix "Colour" reporting "not covered" despite this
+    # page's "Normal Results" section discussing urine colour explicitly),
+    # but that fix was never brought back into this source-of-truth list -
+    # a future full rebuild (`python data/build_rag_chunks.py`) would have
+    # silently lost it. "CLEARITY" added the same way: the article's
+    # microscopic-examination section explicitly asks "Is it clear or
+    # cloudy?", genuine content for a lab report's "Clearity" field.
     {"ids": ["URINE_PROTEIN", "URINE_GLUCOSE", "URINE_PH", "URINE_KETONES",
-             "URINE_NITRITES", "URINE_LEUKOCYTES"], "src": MEDLINEPLUS,
-     "url": "https://medlineplus.gov/ency/article/003579.htm"},
+             "URINE_NITRITES", "URINE_LEUKOCYTES", "URINE_COLOUR", "CLEARITY"],
+     "src": MEDLINEPLUS, "url": "https://medlineplus.gov/ency/article/003579.htm"},
     {"ids": ["URINE_PROTEIN"], "src": MEDLINEPLUS, "url": _MP.format("protein-in-urine")},
     {"ids": ["URINE_GLUCOSE"], "src": MEDLINEPLUS, "url": _MP.format("glucose-in-urine-test")},
     {"ids": ["URINE_KETONES"], "src": MEDLINEPLUS, "url": _MP.format("ketones-in-urine")},
@@ -175,6 +183,29 @@ SOURCES = [
      "url": "https://www.nhs.uk/conditions/urinary-tract-infections-utis/"},
     {"ids": ["URINE_BILIRUBIN"], "src": MEDLINEPLUS, "url": _MP.format("bilirubin-in-urine")},
     {"ids": ["URINE_BLOOD"], "src": MEDLINEPLUS, "url": _MP.format("blood-in-urine")},
+    {"ids": ["SPECIFIC_GRAVITY"], "src": MEDLINEPLUS,
+     "url": "https://medlineplus.gov/ency/article/003587.htm"},
+    {"ids": ["CASTS"], "src": MEDLINEPLUS,
+     "url": "https://medlineplus.gov/ency/article/003586.htm"},
+    # These three were previously reported "not covered" only because the
+    # URL pattern was guessed wrong (tried .../urobilinogen-test/ etc, all
+    # 404). They were found by querying the MedlinePlus search API
+    # (wsearch.nlm.nih.gov) and reading the real links off the Urinalysis
+    # health-topic page - a better discovery method than guessing slugs, and
+    # worth reusing when extending this list further.
+    {"ids": ["UROBILINOGEN"], "src": MEDLINEPLUS,
+     "url": "https://medlineplus.gov/lab-tests/urobilinogen-in-urine/"},
+    {"ids": ["EPITHELIAL_CELLS"], "src": MEDLINEPLUS,
+     "url": "https://medlineplus.gov/lab-tests/epithelial-cells-in-urine/"},
+    {"ids": ["CRYSTALS"], "src": MEDLINEPLUS,
+     "url": "https://medlineplus.gov/lab-tests/crystals-in-urine/"},
+
+    # --- Blood type / infection screening -----------------------------------
+    {"ids": ["ABO_TYPE", "RH_D_TYPE"], "src": NHS,
+     "url": "https://www.nhs.uk/conditions/blood-groups/"},
+    {"ids": ["HBSAG"], "src": NHS, "url": "https://www.nhs.uk/conditions/hepatitis-b/"},
+    {"ids": ["HBSAG"], "src": MEDLINEPLUS, "url": "https://medlineplus.gov/hepatitisb.html"},
+    {"ids": ["HIV"], "src": NHS, "url": "https://www.nhs.uk/conditions/hiv-and-aids/"},
 
     # --- General context ----------------------------------------------------
     {"ids": ["GENERAL"], "src": NHS, "url": "https://www.nhs.uk/tests-and-treatments/blood-tests/"},
