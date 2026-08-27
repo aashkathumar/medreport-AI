@@ -14,7 +14,7 @@ from app.services.llm_providers import (
     provider_status,
 )
 from app.services.rag_service import index_health
-from app.db import save_report, get_user_reports
+import uuid
 
 router = APIRouter()
 
@@ -149,7 +149,15 @@ def _process_upload(
         "ungrounded_test_ids": ungrounded_test_ids,
         "summary_degraded": summary_degraded,
     }
-    report_id = save_report(user_id, report_data)
+    # CHANGED: no longer persisted server-side. Storing full explained
+    # reports indefinitely (the DynamoDB table has no TTL, unlike the S3
+    # bucket's 1-day lifecycle rule) was a real gap between what the upload
+    # page promises ("processed transiently, never stored raw") and what
+    # actually happened -- and the read side of this (GET /reports/{user_id})
+    # had no access control at all: any user_id could be typed in to view
+    # another patient's history. Session-only avoids both: nothing exists
+    # once the browser tab closes, and there's nothing cross-session to leak.
+    report_id = str(uuid.uuid4())
 
     return {
         "report_id": report_id,

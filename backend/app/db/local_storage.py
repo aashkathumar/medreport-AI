@@ -38,6 +38,18 @@ def save_report(user_id: str, report: dict) -> str:
     return report_id
 
 
+def list_user_ids() -> list:
+    """Distinct user_ids that have at least one saved report, most-recently-
+    active first. Backs the frontend's ID picker, which replaced a free-text
+    field patients had to retype (and could typo into someone else's ID)."""
+    data = sorted(_load(), key=lambda x: x["timestamp"], reverse=True)
+    seen = []
+    for item in data:
+        if item["user_id"] not in seen:
+            seen.append(item["user_id"])
+    return seen
+
+
 def get_user_reports(user_id: str) -> list:
     data = _load()
     items = [d for d in data if d["user_id"] == user_id]

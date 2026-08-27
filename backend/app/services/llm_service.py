@@ -1,7 +1,9 @@
+import json
 import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from app.config import settings
@@ -398,6 +400,7 @@ def _build_chain(
     capability: str,
     provider: Optional[str] = None,
     model_name: Optional[str] = None,
+    chain_offset: int = 0,
 ) -> List[str]:
     """Resolves the ordered provider chain for one request.
 
@@ -405,6 +408,17 @@ def _build_chain(
     own, and so an explicitly-requested provider that CANNOT serve the
     capability fails loudly here instead of silently returning an empty chain
     and looking like a generic "all providers failed".
+
+    BUG FOUND: every batch used the SAME chain order (mistral first, always).
+    Under concurrency this meant every one of the (up to 8) simultaneously-
+    fired batches hit Mistral first, all at once -- the free-tier key's rate
+    limit got hit by the concurrency itself, not by total request volume,
+    while Groq/OpenRouter/Gemini sat idle until Mistral failed. `chain_offset`
+    rotates which provider each batch tries FIRST (batch 0 starts at index 0,
+    batch 1 at index 1, ...), spreading first-attempt load evenly across all
+    configured providers while every batch still has the full chain as
+    fallback -- no batch loses resilience, they just don't all queue behind
+    the same provider at once.
     """
     want_vision = capability == "vision"
 
@@ -419,6 +433,9 @@ def _build_chain(
         return [f"{provider}:{model_name}" if model_name else provider]
 
     chain = settings.vision_fallback_chain if want_vision else settings.text_fallback_chain
+    if chain_offset and chain:
+        offset = chain_offset % len(chain)
+        chain = chain[offset:] + chain[:offset]
 
     usable, benched = [], []
     for entry in chain:
@@ -491,6 +508,7 @@ def call_with_fallback(
     model_name: Optional[str] = None,
     capability: Optional[str] = "text",
     timeout: Optional[float] = None,
+    chain_offset: int = 0,
 ) -> dict:
     """Tries each provider in the capability-appropriate chain, retrying
     transient failures on the same provider before moving on.
@@ -516,7 +534,7 @@ def call_with_fallback(
     want_vision = (capability == "vision") or has_images
 
     # Raises LLMUnavailableError if nothing in the chain can serve this.
-    chain = _build_chain("vision" if want_vision else "text", provider, model_name)
+    chain = _build_chain("vision" if want_vision else "text", provider, model_name, chain_offset)
 
     attempted: List[str] = []
     last_error: Optional[Exception] = None
@@ -585,19 +603,110 @@ def _allowed_numbers_for(test: TestResult) -> set:
     return allowed
 
 
+# Cache of VERIFIED explanations (written only after a result passes
+# _verify_grounded + _references_other_test in Phase 3 below). Keyed on the
+# exact result signature, not just the test -- see _cache_key. Repeat
+# uploads of the same PDF and different patients who happen to share a value
+# both skip RAG retrieval AND the LLM entirely on a hit -- the single
+# biggest lever on rate-limit exposure, since a cache hit makes zero network
+# calls and so can never be rate-limited.
+#
+# PERSISTED TO DISK (2026-08-27): was process-lifetime only, so every
+# `uvicorn --reload` restart during a config-tuning session (many, today)
+# silently threw away everything accumulated. Backed by a local JSON file so
+# it survives a restart -- holds no patient identity (see _cache_key: just a
+# test/value/unit/status/specimen signature, the same for any patient with
+# that same result), so this doesn't reopen the report-storage question from
+# earlier -- there is no patient represented in this data at all.
+_CACHE_FILE = Path(__file__).resolve().parent.parent.parent.parent / "local_data" / "explanation_cache.json"
+_EXPLANATION_CACHE: Dict[tuple, dict] = {}
+_CACHE_LOCK = threading.Lock()
+
+
+def _cache_load() -> None:
+    """Reads the persisted cache into memory once, at import time. JSON has
+    no tuple keys, so each entry is stored as {"key": [...], "value": {...}}
+    and reassembled into a tuple key here."""
+    if not _CACHE_FILE.exists():
+        return
+    try:
+        entries = json.loads(_CACHE_FILE.read_text())
+        for entry in entries:
+            _EXPLANATION_CACHE[tuple(entry["key"])] = entry["value"]
+    except Exception as e:
+        # A corrupt/partial cache file should degrade to "cold cache", not
+        # crash the whole service on startup.
+        print(f"Could not load explanation cache from {_CACHE_FILE}: {e}")
+
+
+def _cache_save() -> None:
+    """Full rewrite on every new entry -- simplest way to avoid a corrupted
+    file from a partial append, and the expected size (low thousands of
+    entries at most, for a dissertation-scale project) makes that cheap."""
+    _CACHE_FILE.parent.mkdir(exist_ok=True)
+    entries = [{"key": list(k), "value": v} for k, v in _EXPLANATION_CACHE.items()]
+    _CACHE_FILE.write_text(json.dumps(entries))
+
+
+_cache_load()
+
+
+def _cache_key(test: TestResult) -> tuple:
+    """Exact-match signature. Deliberately includes the literal value, not
+    just status -- what_your_result_means quotes the specific number, so a
+    coarser (test_id, status) key could surface one patient's text quoting a
+    different patient's figure. Two results only ever share a cache entry if
+    every one of these fields is identical.
+    """
+    status_val = test.status.value if hasattr(test.status, "value") else str(test.status)
+    return (
+        test.test_id, str(test.value), (test.unit or "").strip(),
+        status_val, getattr(test, "specimen", None),
+    )
+
+
+def _cache_get(test: TestResult) -> Optional[dict]:
+    with _CACHE_LOCK:
+        cached = _EXPLANATION_CACHE.get(_cache_key(test))
+    return dict(cached) if cached is not None else None
+
+
+def _cache_put(test: TestResult, details: dict) -> None:
+    with _CACHE_LOCK:
+        _EXPLANATION_CACHE[_cache_key(test)] = dict(details)
+        _cache_save()
+
+
 def _explain_batch(
     llm_batch: List[Tuple[TestResult, Dict[str, Any]]],
     profile: UserProfile,
     provider: Optional[str],
     model_name: Optional[str],
+    chain_offset: int = 0,
 ) -> Dict[str, dict]:
-    """Issues ONE LLM call for one batch and returns test_id -> explanation.
+    """Issues at most ONE LLM call for one batch and returns test_id -> explanation.
 
-    Returns {} if the call fails, which the caller treats as "degraded" and
-    fills with deterministic fallback copy.
+    Tests with an exact-match cache hit (see _cache_key) never reach the LLM
+    at all. If every test in the batch is a cache hit, no network call is
+    made. Returns whatever was resolved (cache hits included) even if the
+    network call itself fails entirely, which the caller treats as
+    "degraded" for whatever is still missing and fills with deterministic
+    fallback copy.
     """
-    tests_summary = []
+    results: Dict[str, dict] = {}
+    to_call: List[Tuple[TestResult, Dict[str, Any]]] = []
     for test, grounding in llm_batch:
+        cached = _cache_get(test)
+        if cached is not None:
+            results[test.test_id] = cached
+        else:
+            to_call.append((test, grounding))
+
+    if not to_call:
+        return results
+
+    tests_summary = []
+    for test, grounding in to_call:
         status_val = test.status.value if hasattr(test.status, "value") else str(test.status)
         min_val = getattr(test, "normal_range_min", None)
         max_val = getattr(test, "normal_range_max", None)
@@ -632,12 +741,15 @@ Return valid JSON:
         data = call_with_fallback(
             system=SYSTEM, prompt=prompt, max_tokens=3000,
             provider=provider, model_name=model_name, capability="text",
+            chain_offset=chain_offset,
         )
         raw = data.get("explanations", []) if isinstance(data, dict) else []
-        return {item.get("test_id", ""): item for item in raw if isinstance(item, dict)}
+        for item in raw:
+            if isinstance(item, dict):
+                results[item.get("test_id", "")] = item
     except Exception as e:
         print(f"Explanation batch failed across all providers: {e}")
-        return {}
+    return results  # cache hits survive even if the network call itself failed
 
 
 def explain_all_test_results_batched(
@@ -695,15 +807,47 @@ def explain_all_test_results_batched(
         return [r for r in slots if isinstance(r, ExplainedResult)], degraded, ungrounded
 
     # --- Phase 2: fan the batch calls out concurrently ---------------------
+    # chain_offset=i rotates which provider each batch tries FIRST (see
+    # _build_chain) so the concurrent batches don't all queue behind the same
+    # provider's rate limit at once.
     workers = max(1, min(settings.llm_max_concurrency, len(batches)))
     exp_maps: List[Dict[str, dict]] = [{}] * len(batches)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(_explain_batch, batch, profile, provider, model_name): i
+            pool.submit(_explain_batch, batch, profile, provider, model_name, i): i
             for i, batch in enumerate(batches)
         }
         for future in as_completed(futures):
             exp_maps[futures[future]] = future.result()
+
+    # --- Phase 2.5: retry whatever came back missing ------------------------
+    # A batch call can fail outright (every provider unreachable at that
+    # moment) or come back missing individual test_ids under the same
+    # pressure. This retry fires AFTER every first-wave batch has finished,
+    # so whatever concurrent load caused the failure has largely cleared --
+    # it's a second attempt timed for when contention has eased, not a blind
+    # immediate retry that would likely hit the same rate limit again. This
+    # is what the 13/6/21-degraded pattern (same PDF, three uploads) was
+    # missing: one attempt, no second chance.
+    missing: List[Tuple[TestResult, Dict[str, Any]]] = []
+    for slot in slots:
+        if isinstance(slot, ExplainedResult):
+            continue
+        batch_index, test, grounding = slot
+        if test.test_id not in exp_maps[batch_index]:
+            missing.append((test, grounding))
+
+    retry_results: Dict[str, dict] = {}
+    if missing:
+        retry_batches = [missing[i:i + EXPLAIN_BATCH_SIZE] for i in range(0, len(missing), EXPLAIN_BATCH_SIZE)]
+        retry_workers = max(1, min(settings.llm_max_concurrency, len(retry_batches)))
+        with ThreadPoolExecutor(max_workers=retry_workers) as pool:
+            futures = {
+                pool.submit(_explain_batch, batch, profile, provider, model_name, len(batches) + i): batch
+                for i, batch in enumerate(retry_batches)
+            }
+            for future in as_completed(futures):
+                retry_results.update(future.result())
 
     # --- Phase 3: reassemble in the original test order --------------------
     for slot in slots:
@@ -712,7 +856,8 @@ def explain_all_test_results_batched(
             continue
 
         batch_index, test, grounding = slot
-        details = _coerce_details(exp_maps[batch_index].get(test.test_id, {}))
+        raw_details = exp_maps[batch_index].get(test.test_id) or retry_results.get(test.test_id, {})
+        details = _coerce_details(raw_details)
 
         # --- post-hoc grounding check ------------------------------------
         # The system prompt ASKS the model to stay inside the reference
@@ -735,6 +880,11 @@ def explain_all_test_results_batched(
             if not ok:
                 print(f"Rejected ungrounded explanation for {test.test_id}: {reason}")
                 details = {}
+            else:
+                # Only ever cache a result that passed BOTH checks above --
+                # the cache must never be able to serve an explanation that
+                # would have been rejected.
+                _cache_put(test, details)
 
         if not details:
             # The batch failed, or the model omitted this test_id from its

@@ -36,6 +36,21 @@ def save_report(user_id: str, report: dict) -> str:
     return report_id
 
 
+def list_user_ids() -> list:
+    """Distinct user_ids with at least one saved report. A full table scan is
+    fine at this table's size (dissertation-prototype demo scale); it would
+    need revisiting -- a separate users table, most likely -- before any
+    real multi-user deployment."""
+    resp = _get_table().scan(ProjectionExpression="user_id, #ts",
+                              ExpressionAttributeNames={"#ts": "timestamp"})
+    items = sorted(resp.get("Items", []), key=lambda x: x["timestamp"], reverse=True)
+    seen = []
+    for item in items:
+        if item["user_id"] not in seen:
+            seen.append(item["user_id"])
+    return seen
+
+
 def get_user_reports(user_id: str) -> list:
     resp = _get_table().query(
         KeyConditionExpression="user_id = :uid",

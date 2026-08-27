@@ -508,7 +508,7 @@ def _build_row(raw_name: str, value: str, unit: str, ref_range: str,
     elif _CATEGORICAL_TEST_NAME_RE.search(raw_name):
         value = _clean_categorical_value(value)
 
-    unit = _strip_footer(unit)
+    unit = _clean_unit(_strip_footer(unit))
     ref_range = _strip_footer(ref_range)
 
     # Recover the range when the sub-table's columns are offset from the
@@ -556,6 +556,25 @@ _UNIT_WITH_RANGE_RE = re.compile(
 
 def _strip_footer(text: str) -> str:
     return _FOOTER_RE.sub("", text or "").strip()
+
+
+# BUG FOUND (my_real_report.pdf, Epithelial Cells / Urinary RBC): pdfplumber
+# joins a multi-line table cell with an embedded "\n", and on this report's
+# layout the unit cell for these rows picked up a single stray character
+# from an unrelated line above ("e\n/HPF", "l\n/HPF", "p\n/HPF" instead of
+# plain "/HPF"). Confirmed via raw word extraction: those letters sit a full
+# line-height above the row they ended up glued to.
+#
+# Deliberately narrow: only strips a LONE leading letter immediately before
+# a slash-prefixed unit ("X\n/HPF" -> "/HPF"). Does not touch a unit with no
+# embedded newline, a multi-character prefix, or anything not immediately
+# followed by "/" -- a real single-letter unit or test name elsewhere is
+# untouched, since this pattern only matches the exact glued-fragment shape.
+_GLUED_UNIT_PREFIX_RE = re.compile(r"^[A-Za-z]\s*\n\s*(?=/)")
+
+
+def _clean_unit(unit: str) -> str:
+    return _GLUED_UNIT_PREFIX_RE.sub("", unit or "")
 
 
 # BUG FOUND (Sterling Accuris sample report, WBC Count): the printed value

@@ -1,10 +1,16 @@
 import os
+import time
 import streamlit as st
 import requests
 
 API = os.environ.get("MEDREPORT_API_URL", "http://localhost:8000/api/v1")
 
 st.title("Your Results")
+
+if st.session_state.get("upload_status") == "running":
+    st.info("Your report is still being generated -- this page will update automatically once it's ready.")
+    time.sleep(2)
+    st.rerun()
 
 report = st.session_state.get("report")
 if not report:

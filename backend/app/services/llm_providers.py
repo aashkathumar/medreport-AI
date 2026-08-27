@@ -29,8 +29,16 @@ def _clean_json_string(text: Optional[str]) -> str:
     cleaned = re.sub(r"\s*```$", "", cleaned)
     cleaned = cleaned.strip()
 
-    # Fallback to extracting the outermost JSON object if preamble text exists
-    if not cleaned.startswith("{") and "{" in cleaned:
+    # Trim to the outermost {...} span whenever one is present.
+    #
+    # BUG FOUND: this only ran `if not cleaned.startswith("{")` -- so a
+    # response that starts with the JSON object but has ANYTHING after its
+    # closing brace (a trailing note, a second object, stray whitespace plus
+    # commentary) sailed straight past this guard and into json.loads()
+    # untouched, which then threw "Extra data: line N column M" on the
+    # trailing content. Trimming to [first "{", last "}"] is a no-op for a
+    # response that is already pure JSON, so it's safe to always apply.
+    if "{" in cleaned and "}" in cleaned:
         start = cleaned.find("{")
         end = cleaned.rfind("}")
         if start != -1 and end != -1 and end > start:
@@ -171,6 +179,55 @@ def call_mistral(
     return json.loads(_clean_json_string(content))
 
 
+def call_cerebras(
+    system: str,
+    prompt: Union[str, list],
+    max_tokens: int = 2500,
+    model: str = None,
+    timeout: float = None
+) -> dict:
+    """Cerebras Cloud -- OpenAI-compatible chat completions, text-only (no
+    vision support on their inference API as of this writing).
+
+    Scaffolded ahead of a key being available: safe to leave wired in with
+    CEREBRAS_API_KEY unset, since _build_chain skips any provider without a
+    configured key (see provider_has_key) rather than erroring.
+    """
+    if not settings.cerebras_api_key:
+        raise ValueError("CEREBRAS_API_KEY is not configured in .env!")
+
+    if isinstance(prompt, list) and any(b.get("type") == "image_url" for b in prompt if isinstance(b, dict)):
+        raise ValueError("call_cerebras is text-only and cannot process image content blocks.")
+
+    user_content = prompt
+    if isinstance(prompt, list):
+        user_content = " ".join([b["text"] for b in prompt if isinstance(b, dict) and b.get("type") == "text"])
+
+    target_model = model or settings.cerebras_model
+
+    resp = requests.post(
+        "https://api.cerebras.ai/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {settings.cerebras_api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": target_model,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content},
+            ],
+        },
+        timeout=_resolve_timeout(timeout),
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    content = data["choices"][0]["message"]["content"] if data.get("choices") else "{}"
+    return json.loads(_clean_json_string(content))
+
+
 def call_openrouter(
     system: str, 
     prompt: Union[str, list], 
@@ -304,9 +361,10 @@ PROVIDERS = {
     "mistral": call_mistral,
     "openrouter": call_openrouter,
     "nvidia": call_nvidia,
+    "cerebras": call_cerebras,
 }
 
-VISION_CAPABLE = {"gemini", "openrouter", "nvidia", "mistral"}
+VISION_CAPABLE = {"gemini", "openrouter", "nvidia", "mistral"}  # cerebras: text-only
 
 _PROVIDER_KEY_ATTR = {
     "gemini": "gemini_api_key",
@@ -314,6 +372,7 @@ _PROVIDER_KEY_ATTR = {
     "mistral": "mistral_api_key",
     "openrouter": "openrouter_api_key",
     "nvidia": "nvidia_api_key",
+    "cerebras": "cerebras_api_key",
 }
 
 

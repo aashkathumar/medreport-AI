@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     # Free key from https://build.nvidia.com (any model -> "Get API Key").
     nvidia_api_key: str = ""
+    # Scaffolded ahead of a key -- empty is fine, provider_has_key() skips it
+    # in the chain until CEREBRAS_API_KEY is set. Get one from
+    # https://cloud.cerebras.ai.
+    cerebras_api_key: str = ""
 
     # --- Model selection ---------------------------------------------------
     # Every default below was checked against the live provider APIs. The
@@ -51,6 +55,16 @@ class Settings(BaseSettings):
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_model: str = "meta/llama-3.3-70b-instruct"
     nvidia_vision_model: str = "meta/llama-3.2-90b-vision-instruct"
+
+    # Text-only (no vision endpoint on Cerebras's inference API). Confirmed
+    # from the account's own Limits page (not a guess): "gpt-oss-120b" is
+    # tagged Production; "gemma-4-31b" is tagged Preview -- default to the
+    # production one. Both get their own separate quota (5 req/min, 2400/day,
+    # 90K tokens/min each per the same page), so gemma-4-31b is added as a
+    # second chain entry below rather than only living here as an unused
+    # alternative -- still unverified by an actual generation call, since no
+    # key is configured yet to test with.
+    cerebras_model: str = "gpt-oss-120b"
 
     # --- Fallback chains ---------------------------------------------------
     # CHANGED: call_with_fallback() read `settings.text_fallback_chain`, which
