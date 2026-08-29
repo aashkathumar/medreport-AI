@@ -172,23 +172,32 @@ if status == "running":
     time.sleep(2)
     st.rerun()
 elif status == "done":
-    # CHANGED: used to auto-redirect to Results the FIRST time a report
-    # finished, then fall back to this manual banner on every later visit --
-    # two different experiences for the same "done" state, depending on
-    # whether this was the first time it was seen. Now always shows this
-    # banner and always requires the explicit click, so the behaviour is
-    # identical regardless of when or how many times you land here.
-    st.success("Report explained!")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        if st.button("View results", type="primary"):
-            st.switch_page("pages/2_Results.py")
-    with col_b:
-        if st.button("Upload another report"):
-            st.session_state.upload_status = None
-            st.session_state.upload_error = None
-            st.rerun()
-    st.divider()
+    # BUG FOUND: this banner fired for EVERY completed report regardless of
+    # where it came from, so a manual-entry submission showed "Report
+    # explained!" here (top of page, above "Upload Your Report") AND again
+    # at the bottom of the Manual Entry section (the in-context echo added
+    # for exactly this flow) -- the same acknowledgment duplicated, plus a
+    # jarring jump back to the top of the page away from where the user was
+    # actually working. Gated to PDF-origin reports only; the manual-entry
+    # section handles its own acknowledgment in place, near the bottom.
+    if (st.session_state.get("report") or {}).get("parse_method") != "manual":
+        # CHANGED: used to auto-redirect to Results the FIRST time a report
+        # finished, then fall back to this manual banner on every later visit --
+        # two different experiences for the same "done" state, depending on
+        # whether this was the first time it was seen. Now always shows this
+        # banner and always requires the explicit click, so the behaviour is
+        # identical regardless of when or how many times you land here.
+        st.success("Report explained!")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("View results", type="primary"):
+                st.switch_page("pages/2_Results.py")
+        with col_b:
+            if st.button("Upload another report"):
+                st.session_state.upload_status = None
+                st.session_state.upload_error = None
+                st.rerun()
+        st.divider()
 elif status == "error":
     st.error(st.session_state.upload_error)
 elif status == "manual_needed":
@@ -274,6 +283,16 @@ st.caption("If your PDF did not parse correctly, enter values manually here.")
 
 if "manual_results" not in st.session_state:
     st.session_state.manual_results = []
+if "manual_form_version" not in st.session_state:
+    # BUG FOUND: after "Add test value", the Test name/Value/Unit fields
+    # kept showing what was just typed (e.g. "Haemoglobin" stayed in the
+    # box), so adding a SECOND, different test meant manually clearing
+    # them first. Streamlit widgets can't have their session_state value
+    # overwritten in the same run they're created in (raises
+    # StreamlitAPIException) -- the standard workaround is to change the
+    # widget's key instead, which makes the next rerun treat it as a brand
+    # new, empty widget rather than trying to mutate an existing one.
+    st.session_state.manual_form_version = 0
 
 # BUG FOUND: this expander used to always default to collapsed
 # (st.expander's implicit expanded=False) on every rerun, including the
@@ -283,9 +302,17 @@ if "manual_results" not in st.session_state:
 # something in it, so submitted values stay visible instead of appearing
 # to vanish behind the success banner.
 with st.expander("Enter test values manually", expanded=bool(st.session_state.manual_results)):
+    _fv = st.session_state.manual_form_version
+    # BUG FOUND: putting the example inside the label ("Test name (e.g.
+    # Haemoglobin)") made that label wrap to two lines in a narrower browser
+    # window, which pushed its input box down relative to the Value/Unit
+    # boxes next to it (whose one-line labels didn't wrap) -- the three
+    # boxes stopped lining up on the same row. Moved the examples into
+    # `placeholder=` (greyed-out hint text inside the empty box, the
+    # conventional place for this) so every label stays one line.
     col1, col2, col3 = st.columns(3)
     with col1:
-        test_name = st.text_input("Test name (e.g. Haemoglobin)")
+        test_name = st.text_input("Test name", placeholder="e.g. Haemoglobin", key=f"manual_name_{_fv}")
     with col2:
         # BUG FOUND: st.number_input always pre-fills the field with "0.00".
         # Clicking into it (unlike triple-click or Cmd+A) just places the
@@ -294,9 +321,9 @@ with st.expander("Enter test values manually", expanded=bool(st.session_state.ma
         # them (e.g. produced "0.00145"). A plain text field has nothing
         # pre-filled to collide with; the string is parsed to a float only
         # when "Add test value" is clicked.
-        test_value_raw = st.text_input("Value (e.g. 14.5)")
+        test_value_raw = st.text_input("Value", placeholder="e.g. 14.5", key=f"manual_value_{_fv}")
     with col3:
-        test_unit = st.text_input("Unit (e.g. g/dL)")
+        test_unit = st.text_input("Unit", placeholder="e.g. g/dL", key=f"manual_unit_{_fv}")
 
     if st.button("Add test value"):
         name = test_name.strip()
@@ -329,6 +356,10 @@ with st.expander("Enter test values manually", expanded=bool(st.session_state.ma
             else:
                 st.session_state.manual_results.append(entry)
                 st.success(f"Added: {name} = {test_value} {test_unit}")
+            # Bump the form version so the next rerun renders fresh, empty
+            # Test name/Value/Unit widgets instead of the just-submitted text.
+            st.session_state.manual_form_version += 1
+            st.rerun()
 
     if st.session_state.manual_results:
         st.write("**Entered values:**")
@@ -362,3 +393,36 @@ with st.expander("Enter test values manually", expanded=bool(st.session_state.ma
             add_script_run_ctx(worker)
             worker.start()
             st.rerun()
+
+        # BUG FOUND: the only "done" acknowledgment lived at the very top of
+        # the page (the status banner right below "Upload Your Report").
+        # Since a completed background job triggers st.rerun(), the browser
+        # resets scroll to the top -- so from the user's position at the
+        # bottom, in Manual Entry, it looked like the whole section had been
+        # replaced by "Upload Your Report" rather than just scrolled away
+        # from. Echoing the same acknowledgment here too (gated to manual
+        # -entry reports specifically, via parse_method) means confirmation
+        # shows up right where the action was taken, no scrolling required.
+        if (
+            st.session_state.upload_status == "done"
+            and (st.session_state.get("report") or {}).get("parse_method") == "manual"
+        ):
+            st.success("Report explained!")
+            ack_col1, ack_col2 = st.columns(2)
+            with ack_col1:
+                if st.button("View results", type="primary", key="view_results_manual_btn"):
+                    st.switch_page("pages/2_Results.py")
+            with ack_col2:
+                # BUG FOUND: there was no way to start a fresh set of manual
+                # entries after explaining one -- the old entries just sat
+                # there, and the only way to clear them was a full page
+                # refresh (which also wipes the profile/session). "Add
+                # test value" replaces an entry with the SAME name, but
+                # doesn't help if the next set of tests has different
+                # names entirely.
+                if st.button("Enter a new set of tests", key="reset_manual_btn"):
+                    st.session_state.manual_results = []
+                    st.session_state.manual_form_version += 1
+                    st.session_state.upload_status = None
+                    st.session_state.upload_error = None
+                    st.rerun()

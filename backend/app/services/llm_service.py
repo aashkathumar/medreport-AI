@@ -752,11 +752,25 @@ def _cache_key(test: TestResult) -> tuple:
     coarser (test_id, status) key could surface one patient's text quoting a
     different patient's figure. Two results only ever share a cache entry if
     every one of these fields is identical.
+
+    BUG FOUND (2026-08-29): normal_range_min/max were NOT part of this key,
+    but normal ranges vary by patient sex/age (get_normal_range), and Phase
+    3's grounding re-verification treats a result's OWN range bounds as
+    legitimately citable numbers (_allowed_numbers_for). A cached
+    explanation written for one patient's range (e.g. a male-specific HGB
+    range citing "13.5") got served to a different patient with a different
+    computed range (e.g. the sex-unspecified default citing "11.5") --
+    correctly cached, correctly grounded when it was written, but rejected
+    as "unsourced" on reuse because the SERVING patient's allowed-numbers
+    list didn't include the ORIGINAL patient's bounds. Including the range
+    in the key means two results only share a cache entry if their
+    reference bounds match too, so this can't happen.
     """
     status_val = test.status.value if hasattr(test.status, "value") else str(test.status)
     return (
         test.test_id, str(test.value), (test.unit or "").strip(),
         status_val, getattr(test, "specimen", None),
+        getattr(test, "normal_range_min", None), getattr(test, "normal_range_max", None),
     )
 
 
