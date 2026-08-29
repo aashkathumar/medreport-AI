@@ -481,6 +481,35 @@ def _is_test_name(name: str) -> bool:
     return len(name.split()) <= 8
 
 
+# BUG FOUND (PK0016.pdf, "P-LCC" / "Neutrophil-Lymphocyte Ratio (NLR)"):
+# the same glued-multi-line-cell mechanism documented above for units
+# (_GLUED_UNIT_PREFIX_RE) also corrupts the NAME column -- a stray
+# character from an unrelated line above (a footnote/superscript marker)
+# lands glued to the front of the real name with a literal embedded "\n"
+# ("a\nP-LCC", "S\nNeutrophil-Lymphocyte Ratio (NLR)"). Both survived
+# _is_test_name() as one string, since str.split() with no args already
+# splits on "\n" too, so the combined blob still read as "<=8 words with 2
+# consecutive letters" -- this went undetected until the ungrounded list
+# was inspected and the embedded newline noticed in how it printed.
+#
+# Deliberately narrow, same discipline as _GLUED_UNIT_PREFIX_RE: only
+# strips a leading line that FAILS _is_test_name() on its own AND only
+# when what's left DOES pass it. A raw_name with no embedded newline at
+# all (every normal single-line name -- "AST", "Sodium", "ALT", ...) is
+# never touched, since the while-loop's condition never triggers. A
+# genuinely real multi-line name whose first line already reads as a
+# valid test name on its own is also left completely alone -- the check
+# only fires on a leading fragment the system's own existing rules
+# already consider noise, never on something that looks like a real name.
+def _clean_glued_name_prefix(raw_name: str) -> str:
+    while "\n" in raw_name:
+        first, _, rest = raw_name.partition("\n")
+        if _is_test_name(first.strip()) or not _is_test_name(rest.strip()):
+            break
+        raw_name = rest.strip()
+    return raw_name
+
+
 def _build_row(raw_name: str, value: str, unit: str, ref_range: str,
                page_num: int, specimen: Optional[str] = None) -> Optional[dict]:
     """Shared validation + cleaning for BOTH deterministic strategies.
@@ -491,6 +520,7 @@ def _build_row(raw_name: str, value: str, unit: str, ref_range: str,
     because it would not parse as a number).
     """
     raw_name = (raw_name or "").strip(" .:-")
+    raw_name = _clean_glued_name_prefix(raw_name)
     value, flag = _clean_value(value or "")
     raw_name, name_flag = _split_name_flag(raw_name)
     flag = flag or name_flag
@@ -565,12 +595,17 @@ def _strip_footer(text: str) -> str:
 # plain "/HPF"). Confirmed via raw word extraction: those letters sit a full
 # line-height above the row they ended up glued to.
 #
-# Deliberately narrow: only strips a LONE leading letter immediately before
-# a slash-prefixed unit ("X\n/HPF" -> "/HPF"). Does not touch a unit with no
-# embedded newline, a multi-character prefix, or anything not immediately
-# followed by "/" -- a real single-letter unit or test name elsewhere is
-# untouched, since this pattern only matches the exact glued-fragment shape.
-_GLUED_UNIT_PREFIX_RE = re.compile(r"^[A-Za-z]\s*\n\s*(?=/)")
+# WIDENED (PK0016.pdf, Blood Urea / MCV): originally required the glued
+# fragment to be immediately followed by "/", assuming every affected unit
+# looked like "/HPF" -- but the same glue mechanism also hit non-slash
+# units on this report ("a\nmg/dL", "e\nfL", confirmed via raw extraction).
+# Dropped the "/"-lookahead requirement -- still only ever strips a LONE
+# leading letter immediately before an embedded newline, nothing else. A
+# real unit never starts with a single bare letter directly followed by a
+# line break (every real unit here is multi-character -- "mg/dL", "fL",
+# "mmol/L" -- or has no embedded newline at all), so this can't mistake a
+# genuine unit for the glued artifact.
+_GLUED_UNIT_PREFIX_RE = re.compile(r"^[A-Za-z]\s*\n\s*")
 
 
 def _clean_unit(unit: str) -> str:

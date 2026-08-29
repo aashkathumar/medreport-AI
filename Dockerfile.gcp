@@ -1,0 +1,40 @@
+# GCP Cloud Run container image for the MedReport AI backend (FastAPI).
+#
+# Build:  docker build -f Dockerfile.gcp -t medreport-ai-backend-gcp .
+# Run locally:  docker run -p 8080:8080 medreport-ai-backend-gcp
+# Deploy:  gcloud run deploy medreport-ai-backend --source . \
+#            --dockerfile Dockerfile.gcp --region <region> --allow-unauthenticated
+#          (or build/push to Artifact Registry yourself and
+#           `gcloud run deploy --image ...`)
+#
+# Cloud Run just wants a normal HTTP server listening on $PORT (it sets
+# PORT itself, default 8080) -- no handler-wrapping needed, unlike the
+# Lambda image. Runs the exact same `app.main:app` FastAPI instance via
+# plain uvicorn, the same way it's run locally.
+FROM python:3.11-slim
+
+WORKDIR /srv
+
+# BUG FOUND: pip's default index resolves torch to its CUDA build
+# (confirmed: torch.__version__ == "2.13.0+cu130", torch.cuda.is_available()
+# == False anyway, since neither Cloud Run nor Lambda has a GPU) -- this
+# drags in several GB of nvidia-cublas/cudnn/cufft/cusolver/... packages
+# that can never be used. Installing the CPU-only build from PyTorch's own
+# index instead, at the exact version already pinned in requirements.txt,
+# then installing everything else normally (pip leaves an
+# already-satisfied exact-version pin alone, so this doesn't get
+# overwritten by the second install).
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r requirements.txt
+
+# Same relative layout as local dev and the AWS image -- data/ as a
+# sibling of backend/, matching reference_db.py's _DATA_DIR path walk.
+COPY backend/app backend/app
+COPY data data
+
+ENV PYTHONPATH=/srv/backend
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]

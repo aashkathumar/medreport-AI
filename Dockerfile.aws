@@ -1,0 +1,58 @@
+# AWS Lambda container image for the MedReport AI backend (FastAPI).
+#
+# Build:  docker build -f Dockerfile.aws -t medreport-ai-backend-aws .
+# Run locally (emulates the Lambda runtime):
+#   docker run -p 9000:8080 medreport-ai-backend-aws
+#   curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}'
+# Deploy: push to ECR, point a Lambda function (container image type) at it,
+# or use `sam build --use-container` / `sam deploy` with template.yaml.
+#
+# Uses the official Lambda Python base image so the Lambda Runtime
+# Interface Client is already wired up -- CMD is "<module>.<handler>",
+# resolved via mangum's ASGI adapter already set up in app/main.py
+# (`handler = Mangum(app, lifespan="off")`), not a plain uvicorn server.
+#
+# BUG FOUND, worth recording since it cost real time to track down: the
+# obvious choice (python:3.11, matching template.yaml's Runtime) FAILS to
+# build at all. AWS's Python 3.11 Lambda image runs on Amazon Linux 2,
+# confirmed directly (`docker run --entrypoint sh ... cat /etc/os-release`)
+# rather than assumed -- AL2's glibc predates the manylinux_2_28 tag most
+# current scientific-Python wheels (numpy>=2.0, faiss-cpu, ...) are
+# published against. pip falls back to building from source, which cascades
+# into needing a C compiler AL2 doesn't ship by default, and even after
+# installing one (yum install gcc), AL2's yum-provided gcc (7.3.1) is too
+# old for numpy's OWN build requirement ("NumPy requires GCC >= 9.3") --
+# confirmed this is an AL2-toolchain problem, not an architecture one, by
+# hitting the identical failure on both arm64 and amd64 builds, and not
+# something an older/pinned faiss-cpu version sidesteps either.
+#
+# Fix: Python 3.12's Lambda image runs on Amazon Linux 2023 instead
+# (confirmed the same way) -- modern glibc, current wheel compatibility,
+# same official AWS base-image strategy, just not stuck on an aging OS.
+# Nothing in this app is Python-3.11-specific, so this needed no other
+# changes -- template.yaml's Runtime should be bumped to python3.12 to
+# match whenever this image is actually deployed via SAM.
+FROM public.ecr.aws/lambda/python:3.12
+
+# BUG FOUND: same CPU-only-torch fix as Dockerfile.gcp -- see its comment.
+# More than cosmetic here specifically: the CUDA build's extra ~GB pushed
+# this image size close to AWS Lambda's hard 10,240 MB image-size limit.
+COPY backend/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Preserves the SAME relative layout the app already assumes when run
+# locally (`uvicorn app.main:app --app-dir backend`) -- data/ sits as a
+# sibling of backend/, which is what reference_db.py's _DATA_DIR expects
+# (Path(__file__).parent.parent.parent.parent from backend/app/services/).
+# Keeping this identical to local dev means zero application code changes
+# for this deployment target.
+COPY backend/app ${LAMBDA_TASK_ROOT}/backend/app
+COPY data ${LAMBDA_TASK_ROOT}/data
+
+# The "app" package lives under backend/, not directly at LAMBDA_TASK_ROOT
+# -- Lambda only puts LAMBDA_TASK_ROOT itself on sys.path by default, so
+# this makes `app.main.handler` importable without moving files around.
+ENV PYTHONPATH="${LAMBDA_TASK_ROOT}/backend"
+
+CMD ["app.main.handler"]

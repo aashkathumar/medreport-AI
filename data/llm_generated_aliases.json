@@ -1,0 +1,2682 @@
+{
+  "17_HYDROXYPROGESTERONE": [
+    "17-Hydroxyprogesterone",
+    "17-OHP",
+    "17-OH-Progesterone"
+  ],
+  "ABG": [
+    "Arterial Blood Gas",
+    "ABG",
+    "Arterial Blood Gases",
+    "ABGs"
+  ],
+  "ABO_TYPE": [
+    "ABO Group",
+    "ABO Blood Group",
+    "ABO Typing",
+    "Blood Group ABO",
+    "ABO/Rh",
+    "ABO Rh Type",
+    "ABO Rh"
+  ],
+  "ACETAMINOPHEN": [
+    "Acetaminophen",
+    "APAP",
+    "Paracetamol"
+  ],
+  "ACID_FAST_BACILLUS": [
+    "AFB",
+    "AFB SMEAR",
+    "ACID FAST BACILLI",
+    "ACID FAST STAIN",
+    "AFB STAIN",
+    "AFB SMEAR AND CULTURE"
+  ],
+  "ACTH": [
+    "ACTH (Adrenocorticotropic Hormone)",
+    "Corticotropin"
+  ],
+  "ADHD": [],
+  "ADRENOCORTICOTROPIC_HORMONE": [
+    "ACTH",
+    "Corticotropin"
+  ],
+  "AFB": [
+    "AFB Culture",
+    "AFB Smear",
+    "Acid-Fast Stain",
+    "AFB Stain",
+    "AFB Smear and Culture",
+    "AFB AFB"
+  ],
+  "AFP": [
+    "AFP",
+    "Alpha Fetoprotein",
+    "Alpha-Fetoprotein"
+  ],
+  "ALBUMIN": [
+    "Albumin",
+    "ALB",
+    "Serum Albumin",
+    "Blood Albumin"
+  ],
+  "ALCOHOL_USE": [
+    "Alcohol Use",
+    "Alcohol Use Disorder Identification Test (AUDIT)",
+    "AUDIT",
+    "CAGE Questionnaire",
+    "CAGE",
+    "Alcohol Screening Test",
+    "Alcohol Abuse Screening"
+  ],
+  "ALDOSTERONE": [
+    "ALDO",
+    "Aldosterone, Plasma",
+    "Aldosterone, Serum"
+  ],
+  "ALKALINE_PHOSPHATASE": [
+    "ALK PHOS",
+    "ALKP",
+    "ALP",
+    "Alkaline Phosphatase (ALP)"
+  ],
+  "ALLERGY": [
+    "Allergen-Specific IgE",
+    "IgE Antibody Test",
+    "Allergy Testing",
+    "Allergy Screen",
+    "Allergy Panel",
+    "Allergen Panel",
+    "Specific IgE",
+    "sIgE",
+    "RAST (Radioallergosorbent Test)",
+    "ImmunoCAP",
+    "Allergen-Specific IgE Antibodies",
+    "Allergy Blood Panel"
+  ],
+  "ALLERGY_SKIN": [
+    "Allergy Skin Testing",
+    "Skin Allergy Test",
+    "Skin Prick Test",
+    "SPT",
+    "Percutaneous Skin Test",
+    "Epicutaneous Skin Test",
+    "Intradermal Skin Test",
+    "Patch Test",
+    "Prick Skin Test"
+  ],
+  "ALP": [
+    "ALK PHOS",
+    "ALKP",
+    "Alkaline Phosphatase (ALP)",
+    "AP",
+    "Serum Alkaline Phosphatase",
+    "Total Alkaline Phosphatase"
+  ],
+  "ALPHA_1_ANTITRYPSIN_TESTING": [
+    "Alpha-1 Antitrypsin",
+    "A1AT",
+    "AAT",
+    "Alpha-1 Proteinase Inhibitor",
+    "Alpha-1 Antitrypsin Level",
+    "Alpha-1 Antitrypsin Quantitation"
+  ],
+  "ALPHA_FETOPROTEIN": [
+    "AFP",
+    "Alpha Fetoprotein",
+    "Alpha-Fetoprotein"
+  ],
+  "ALT": [
+    "Alanine Aminotransferase",
+    "Alanine Transaminase",
+    "ALT",
+    "SGPT",
+    "Serum Glutamic Pyruvic Transaminase"
+  ],
+  "AMMONIA": [
+    "Ammonia",
+    "Ammonia (NH3)",
+    "Ammonia, Plasma",
+    "Ammonia, Serum",
+    "NH3",
+    "Plasma Ammonia",
+    "Serum Ammonia"
+  ],
+  "AMNIOCENTESIS": [
+    "Amniotic Fluid Analysis",
+    "AF Analysis"
+  ],
+  "AMYLASE": [
+    "AMY",
+    "Serum Amylase",
+    "Plasma Amylase"
+  ],
+  "ANA": [
+    "ANA",
+    "Antinuclear Antibody",
+    "ANA Screen",
+    "ANA Titer",
+    "FANA (Fluorescent Antinuclear Antibody)",
+    "ANA by IFA",
+    "ANA by Indirect Immunofluorescence"
+  ],
+  "ANCA": [
+    "ANCA Screen",
+    "ANCA Panel",
+    "ANCA with Reflex to MPO/PR3"
+  ],
+  "ANION_GAP": [
+    "Anion Gap",
+    "Serum Anion Gap",
+    "Blood Anion Gap",
+    "AG"
+  ],
+  "ANOSCOPY": [],
+  "ANTIBIOTIC_SENSITIVITY": [
+    "Antibiotic Susceptibility",
+    "AST",
+    "Sensitivity Test",
+    "Susceptibility Test",
+    "Antimicrobial Susceptibility",
+    "Antimicrobial Sensitivity"
+  ],
+  "ANTIBODY_SEROLOGY": [
+    "Antibody Serology",
+    "Serology Antibody",
+    "Serology Screen",
+    "Serology Panel",
+    "Serology Testing",
+    "Serology Results",
+    "Serology Assay"
+  ],
+  "ANTINEUTROPHIL_CYTOPLASMIC_ANTIBODIES": [
+    "ANCA",
+    "ANCA Screen",
+    "ANCA Panel",
+    "ANCA Profile",
+    "C-ANCA",
+    "P-ANCA",
+    "ANCA with Reflex to MPO/PR3"
+  ],
+  "ANTI_M_LLERIAN_HORMONE": [
+    "AMH",
+    "Anti-M\u00fcllerian Hormone",
+    "M\u00fcllerian Inhibiting Substance",
+    "MIS",
+    "Anti-M\u00fcllerian Hormone (AMH)"
+  ],
+  "APPENDICITIS": [],
+  "ARTERIAL_BLOOD_GAS": [
+    "ABG",
+    "Arterial Blood Gas",
+    "Arterial Blood Gases",
+    "ABG (Arterial Blood Gas)",
+    "Arterial Blood Gas Analysis"
+  ],
+  "ASD": [],
+  "AST": [
+    "Aspartate Aminotransferase",
+    "Aspartate Transaminase",
+    "AST (Aspartate Aminotransferase)",
+    "AST (Aspartate Transaminase)",
+    "GOT (Glutamic Oxaloacetic Transaminase)",
+    "SGOT (Serum Glutamic Oxaloacetic Transaminase)"
+  ],
+  "AT_HOME_MEDICAL": [],
+  "AUTISM_SPECTRUM_DISORDER": [],
+  "AUTOANTIBODY_TESTING": [
+    "AUTOANTIBODY SCREEN",
+    "AUTOANTIBODY PROFILE",
+    "AUTOANTIBODIES"
+  ],
+  "AUTONOMIC_TESTING": [
+    "Autonomic Function Testing",
+    "Autonomic Reflex Screen",
+    "Autonomic Nervous System Testing",
+    "ANS Testing",
+    "Autonomic Function Study"
+  ],
+  "A_G": [
+    "A/G Ratio",
+    "Albumin/Globulin Ratio",
+    "Albumin Globulin Ratio",
+    "Protein Electrophoresis with A/G Ratio"
+  ],
+  "B12": [
+    "Vitamin B12",
+    "B12",
+    "Cobalamin",
+    "Serum B12",
+    "Vitamin B-12",
+    "Vit B12",
+    "B12 (Cobalamin)",
+    "B12 Level"
+  ],
+  "B2M": [
+    "B2M",
+    "Beta-2 Microglobulin",
+    "Beta 2-Microglobulin",
+    "\u03b22-Microglobulin",
+    "\u03b22M"
+  ],
+  "BACTERIAL_VAGINOSIS": [
+    "BV",
+    "Bacterial Vaginosis PCR",
+    "Bacterial Vaginosis NAAT",
+    "BV PCR",
+    "BV NAAT"
+  ],
+  "BACTERIA_CULTURE": [
+    "Bacterial Culture",
+    "Bacterial Culture, Routine",
+    "Bacterial Culture, Aerobic",
+    "Bacterial Culture, Anaerobic",
+    "Culture, Bacterial",
+    "Culture, Routine Bacterial",
+    "Routine Bacterial Culture"
+  ],
+  "BAL": [
+    "Bronchoalveolar Lavage",
+    "BAL Fluid Analysis",
+    "BAL Fluid"
+  ],
+  "BALANCE": [],
+  "BARIUM_SWALLOW": [
+    "Barium Esophagogram",
+    "Esophagogram",
+    "Barium Esophagram",
+    "Upper GI Series",
+    "UGI Series",
+    "Barium Upper GI",
+    "Barium Upper GI Series",
+    "Esophagram"
+  ],
+  "BASIC_METABOLIC": [
+    "BMP",
+    "Basic Metabolic Panel",
+    "Metabolic Panel, Basic",
+    "Basic Metabolic Profile",
+    "BMP (Basic Metabolic Panel)"
+  ],
+  "BASOPHILS": [
+    "BASO",
+    "BASOPHILS %",
+    "BASOPHILS ABS",
+    "BASOPHILS (ABS)",
+    "BASOPHILS (%)",
+    "BASOPHILS (ABSOLUTE)",
+    "BASOPHILS (PERCENT)"
+  ],
+  "BCR_ABL1_GENETIC": [
+    "BCR-ABL1",
+    "BCR/ABL1",
+    "BCR-ABL",
+    "BCR/ABL",
+    "BCR-ABL1 Fusion Gene",
+    "BCR-ABL1 Fusion Transcript",
+    "BCR-ABL1 RT-PCR",
+    "BCR-ABL1 PCR",
+    "BCR-ABL1 FISH",
+    "BCR-ABL1 Cytogenetics",
+    "Philadelphia Chromosome Test",
+    "Ph Chromosome Test",
+    "BCR-ABL1 Mutation Analysis",
+    "BCR-ABL1 Genotyping"
+  ],
+  "BETA_2_MICROGLOBULIN": [
+    "Beta-2 Microglobulin",
+    "B2M",
+    "Beta 2 Microglobulin",
+    "B2 Microglobulin",
+    "Beta-2-Microglobulin",
+    "B2-Microglobulin",
+    "B2M Tumor Marker",
+    "Beta-2-Microglobulin (B2M)"
+  ],
+  "BILIRUBIN": [
+    "BILI",
+    "BILIRUBIN, TOTAL",
+    "TBIL",
+    "TOTAL BILIRUBIN"
+  ],
+  "BILIRUBIN_IN": [
+    "BILIRUBIN URINE",
+    "URINE BILIRUBIN",
+    "BILI URINE",
+    "UR BILI",
+    "BILIRUBIN (URINE)",
+    "URINE BILI"
+  ],
+  "BLOOD_ALCOHOL": [
+    "Blood Alcohol Concentration",
+    "BAC",
+    "Serum Ethanol",
+    "Plasma Ethanol",
+    "Blood Ethanol",
+    "Serum Alcohol",
+    "Plasma Alcohol"
+  ],
+  "BLOOD_DIFFERENTIAL": [
+    "CBC DIFF",
+    "DIFF",
+    "DIFFERENTIAL COUNT",
+    "PERIPHERAL BLOOD DIFFERENTIAL",
+    "BLOOD DIFF",
+    "DIFFERENTIAL",
+    "CBC WITH DIFF"
+  ],
+  "BLOOD_GLUCOSE": [
+    "Glucose",
+    "Blood Glucose",
+    "Glucose (Blood)",
+    "Serum Glucose",
+    "Plasma Glucose",
+    "Fasting Glucose",
+    "Random Glucose",
+    "Glucose, Blood",
+    "Blood Glucose Level",
+    "Glucose Level",
+    "Gluc",
+    "Glu",
+    "BG"
+  ],
+  "BLOOD_IN": [
+    "Urine Blood",
+    "Blood (Urine)",
+    "Urine Blood (Dipstick)",
+    "Urine Blood (Microscopic)",
+    "Urine Blood (Dipstick/Microscopic)",
+    "Urine Blood (Dipstick/Micro)",
+    "Urine Blood (Dipstick/Microscopy)",
+    "Urine Blood (Dipstick/Microscopic)",
+    "Urine Blood (Dipstick/Micro)",
+    "Urine Blood (Dipstick/Microscopy)",
+    "Urine Blood (Dipstick/Micro)",
+    "Urine Blood (Dipstick/Microscopy)",
+    "Urine Blood (Dipstick/Micro)",
+    "Urine Blood (Dipstick/Microscopy)",
+    "Urine Blood (Dipstick/Micro)",
+    "Urine Blood (Dipstick/Microscopy)",
+    "Urine Blood (Dipstick/Micro)",
+    "Urine Blood (Dipstick/Microscopy)",
+    "Urine Blood (Dipstick/Micro)",
+    "Urine Blood (Dipstick/Microscopy)"
+  ],
+  "BLOOD_SMEAR": [
+    "Peripheral Blood Smear",
+    "PBS",
+    "Blood Film",
+    "Peripheral Blood Film",
+    "PBF",
+    "Manual Differential",
+    "Manual Diff",
+    "Diff",
+    "Differential Count",
+    "Manual Differential Count",
+    "Peripheral Blood Smear Review",
+    "Smear Review",
+    "Blood Smear Review",
+    "Manual Smear",
+    "Peripheral Smear"
+  ],
+  "BMP": [
+    "Basic Metabolic Panel",
+    "BMP",
+    "Chem 8",
+    "Chemistry 8",
+    "Basic Chemistry Panel",
+    "Basic Metabolic Profile"
+  ],
+  "BONE_DENSITY_SCAN": [
+    "DEXA",
+    "DXA",
+    "Dual Energy X-ray Absorptiometry",
+    "Bone Densitometry",
+    "Bone Mineral Density",
+    "BMD",
+    "DEXA Scan",
+    "DXA Scan"
+  ],
+  "BONE_MARROW": [
+    "Bone Marrow Biopsy",
+    "Bone Marrow Aspiration",
+    "BM Biopsy",
+    "BM Aspiration",
+    "Bone Marrow Aspiration and Biopsy",
+    "BMA",
+    "BMB"
+  ],
+  "BRAF_GENETIC": [
+    "BRAF Mutation Analysis",
+    "BRAF V600E Test",
+    "BRAF Gene Test"
+  ],
+  "BRCA_GENETIC": [
+    "BRCA1/2 Mutation Analysis",
+    "Hereditary Cancer Genetic Test"
+  ],
+  "BREAST_BIOPSY": [
+    "Core Biopsy",
+    "Needle Biopsy"
+  ],
+  "BRONCHOSCOPY_AND_BRONCHOALVEOLAR_LAVAGE": [
+    "Bronchoscopy with Bronchoalveolar Lavage",
+    "Bronchoalveolar Lavage and Bronchoscopy"
+  ],
+  "BUN": [
+    "Blood Urea",
+    "Blood Urea Nitrogen"
+  ],
+  "BURN_EVALUATION": [
+    "Total Body Surface Area (TBSA) Assessment",
+    "Burn Area Measurement"
+  ],
+  "CA": [
+    "Basic Metabolic Panel (BMP)",
+    "Calcium Blood Test",
+    "Calcium Profile",
+    "Calcium Panel"
+  ],
+  "CALCITONIN": [
+    "CALC Test",
+    "Calcitonin Assay",
+    "MCT Test",
+    "Mid-Region Calcitonin Test"
+  ],
+  "CALCIUM": [
+    "Blood Calcium Levels",
+    "Serum Calcium Test",
+    "Electrolyte Calcium Test",
+    "Total Serum Calcium Test"
+  ],
+  "CALCIUM_IN": [
+    "Calcium Urine Test",
+    "Calcium Excretion Test"
+  ],
+  "CALPROTECTIN_STOOL": [
+    "Fecal Calprotectin Test",
+    "Calprotectin in Stool Test",
+    "Calprotectin Assay",
+    "Calprotectin Measurement"
+  ],
+  "CARBON_DIOXIDE_IN_BLOOD": [
+    "Blood Gases Analysis - Carbon Dioxide (CO2)",
+    "Blood CO2 Level Test"
+  ],
+  "CASTS": [
+    "Urinary RBC and casts",
+    "Urine casts and RBCs"
+  ],
+  "CATECHOLAMINE": [
+    "Catecholamines",
+    "Cathecolamines"
+  ],
+  "CA_125": [
+    "CA125",
+    "Ovarian Cancer Antigen CA 125"
+  ],
+  "CA_19_9": [
+    "CA 19-9",
+    "Pancreatic Cancer Antigen CA 19-9",
+    "CA 19-9 Tumor Marker"
+  ],
+  "CBC": [
+    "Complete Blood Count",
+    "CBC",
+    "Full Blood Count",
+    "FBC",
+    "Blood Panel",
+    "Blood Count"
+  ],
+  "CCP_ANTIBODY": [
+    "CCP Ab",
+    "CCP Antibody",
+    "CCP IgG",
+    "Cardiac CCP Antibody",
+    "Cardiac Myosin Binding Protein-G (CCP) Antibody"
+  ],
+  "CD4_LYMPHOCYTE_COUNT": [
+    "CD4 Cell Count",
+    "CD4+ T Lymphocyte Count"
+  ],
+  "CEA": [
+    "CEA",
+    "Carcinoembryonic Antibody",
+    "Carcinoembryonic Antigen"
+  ],
+  "CELIAC_DISEASE": [
+    "Celiac Panel",
+    "Gluten Sensitivity Panel",
+    "Gliadin Antibody Panel"
+  ],
+  "CEREBROSPINAL_FLUID_ANALYSIS": [
+    "Cerebrospinal Fluid (CSF) Analysis",
+    "CSF Analysis",
+    "Lumbar Puncture",
+    "LP"
+  ],
+  "CERULOPLASMIN": [
+    "Ceruloplasmin",
+    "CERU",
+    "CP",
+    "Ceruloplasmin Activity",
+    "Ceruloplasmin Serum"
+  ],
+  "CHICKENPOX_AND_SHINGLES": [
+    "Varicella-zoster virus IgM antibody",
+    "Varicella-zoster virus immune globulin",
+    "Varicella-zoster virus IgM",
+    "Varicella-zoster virus antibodies",
+    "Varicella-zoster virus immune response"
+  ],
+  "CHLAMYDIA": [
+    "Chlamydia Screening",
+    "Chlamydia Detection"
+  ],
+  "CHLORIDE": [
+    "chloride ion",
+    "cl-"
+  ],
+  "CHOL": [
+    "Cholesterol",
+    "Chol"
+  ],
+  "CHOLESTEROL": [
+    "Chol",
+    "Cholesterol Panel",
+    "Total Cholesterol"
+  ],
+  "CHORIONIC_VILLUS_SAMPLING": [
+    "Chorionic Villus Sampling",
+    "CVS",
+    "CVS Test",
+    "Chorionic Villus Sampling Test"
+  ],
+  "CHYMOTRYPSIN_IN_STOOL": [
+    "Chymotrypsin",
+    "Chymotrypsin Activity",
+    "CTrypsin"
+  ],
+  "CL": [
+    "Chloride",
+    "Cl-"
+  ],
+  "CLEARITY": [
+    "Urinalysis",
+    "UA clarity"
+  ],
+  "CMP": [
+    "CMP",
+    "Metabolic Panel",
+    "Metabolic Panel (Complete)",
+    "Comprehensive Metabolic Panel with Electrolytes",
+    "CMP with Electrolytes"
+  ],
+  "CMV": [
+    "CMV",
+    "Cytomegalovirus",
+    "CMV Antibody",
+    "CMV Serology",
+    "Cytomegalovirus Antibody",
+    "CMV IgG",
+    "CMV IgM",
+    "Cytomegalovirus IgG",
+    "Cytomegalovirus IgM",
+    "CMV DNA",
+    "CMV PCR",
+    "Cytomegalovirus DNA",
+    "CMV Viral Load",
+    "Cytomegalovirus PCR"
+  ],
+  "CO2": [
+    "CO2",
+    "Carbon Dioxide",
+    "Bicarbonate",
+    "HCO3",
+    "Bicarb",
+    "CO2 (Bicarbonate)",
+    "Total CO2",
+    "Bicarbonate (HCO3)",
+    "Carbon Dioxide, Total"
+  ],
+  "COAGULATION_FACTOR": [
+    "Factor",
+    "Coagulation Factor",
+    "Coagulation Factors",
+    "Coag Factor",
+    "Factor Assay",
+    "Coagulation Factor Assay",
+    "Factor Activity"
+  ],
+  "COGNITIVE_TESTING": [
+    "Cognitive Assessment",
+    "Cognitive Function Test",
+    "Cognitive Evaluation",
+    "Cognitive Screen",
+    "Neurocognitive Testing",
+    "Neurocognitive Assessment",
+    "Cognitive Testing Panel"
+  ],
+  "COLD_STIMULATION": [
+    "Cold Stim Test",
+    "Cold Stim",
+    "Cold Pressor Test",
+    "Cold Pressor Response",
+    "Cold Challenge Test",
+    "Ice Water Test",
+    "Ice Water Stimulation Test"
+  ],
+  "COLORECTAL_CANCER": [
+    "Colorectal Cancer Screening",
+    "CRC Screening",
+    "Colon Cancer Screening",
+    "Colon Cancer Screen",
+    "Colorectal Cancer Screen",
+    "Colorectal CA Screening",
+    "CRC Screen"
+  ],
+  "COLPOSCOPY": [
+    "Cervical Colposcopy",
+    "Colposcopic Examination",
+    "Colposcopy Procedure"
+  ],
+  "COMPLEMENT": [
+    "Complement",
+    "Complement Level",
+    "Complement Serum",
+    "Serum Complement",
+    "Complement, Total",
+    "Total Complement",
+    "Complement Activity",
+    "Complement, Blood"
+  ],
+  "COMPLETE_BLOOD_COUNT": [
+    "CBC",
+    "Complete Blood Count",
+    "C.B.C.",
+    "Cbc W/Auto Diff",
+    "CBC with Differential",
+    "Complete Blood Count (CBC) with Differential",
+    "CBC w/ Diff",
+    "Hemogram",
+    "Hematology Panel",
+    "Blood Count",
+    "Complete Blood Cell Count"
+  ],
+  "COMPREHENSIVE_METABOLIC": [
+    "CMP",
+    "Comprehensive Metabolic Panel",
+    "Chem 12",
+    "Chemistry Panel",
+    "Comprehensive Chemistry Panel",
+    "Comp Met Panel",
+    "Metabolic Panel",
+    "Comprehensive Met Panel"
+  ],
+  "CONCUSSION": [],
+  "CORD_BLOOD_TESTING_AND_BANKING": [
+    "Cord Blood Banking",
+    "Cord Blood Collection",
+    "Cord Blood Storage",
+    "Umbilical Cord Blood Banking",
+    "Umbilical Cord Blood Collection",
+    "Umbilical Cord Blood Testing",
+    "Cord Blood Testing"
+  ],
+  "CORTISOL": [
+    "Cortisol",
+    "Serum Cortisol",
+    "Plasma Cortisol",
+    "Total Cortisol",
+    "Hydrocortisone",
+    "Compound F",
+    "Cortisol Level",
+    "COR",
+    "CORT"
+  ],
+  "CREATINE_KINASE": [
+    "CK",
+    "Creatine Phosphokinase",
+    "CPK",
+    "Total CK",
+    "CK Total",
+    "Creatine Kinase Total",
+    "Creatine Kinase, Total",
+    "CK-Total",
+    "Total Creatine Kinase"
+  ],
+  "CREATININE": [
+    "CREAT",
+    "Creatinine, Serum",
+    "Serum Creatinine",
+    "CREATININE",
+    "CR",
+    "Crea"
+  ],
+  "CRP": [
+    "CRP",
+    "C-Reactive Protein",
+    "C Reactive Protein",
+    "C-Reactive Protein, Quantitative",
+    "C-Reactive Protein (CRP)",
+    "CRP, Quantitative",
+    "High Sensitivity CRP",
+    "hs-CRP",
+    "hsCRP",
+    "High-Sensitivity C-Reactive Protein"
+  ],
+  "CRYSTALS": [
+    "Urine Crystals",
+    "Crystal Analysis, Urine",
+    "Urinary Crystals",
+    "Crystal, Urine",
+    "Crystals, Urine"
+  ],
+  "CRYSTALS_IN": [
+    "Urine Crystals",
+    "Crystalluria",
+    "Crystal Analysis, Urine",
+    "Crystal Identification, Urine",
+    "Crystals",
+    "URINE CRYSTALS",
+    "CRYSTALS"
+  ],
+  "CSF": [
+    "CSF Analysis",
+    "Cerebrospinal Fluid Analysis",
+    "CSF Exam",
+    "CSF Fluid Analysis",
+    "CSF Profile",
+    "CSF Studies"
+  ],
+  "CSF_IMMUNOGLOBULIN_G_INDEX": [
+    "CSF IgG Index",
+    "IgG Index (CSF)",
+    "CSF IgG Index (CSF)",
+    "IgG Index CSF"
+  ],
+  "CVS": [
+    "Chorionic Villus Sampling",
+    "CVS",
+    "Chorionic villus sampling"
+  ],
+  "CYTOMEGALOVIRUS": [
+    "CMV",
+    "CMV PCR",
+    "CMV DNA PCR",
+    "Cytomegalovirus PCR",
+    "Cytomegalovirus DNA PCR",
+    "CMV by PCR",
+    "Cytomegalovirus by PCR"
+  ],
+  "C_DIFF_TESTING": [
+    "C. difficile Testing",
+    "Clostridioides difficile Testing",
+    "C. difficile Toxin Test",
+    "C. diff Toxin A/B",
+    "C. difficile Toxin A/B",
+    "C. diff Toxin A/B",
+    "Clostridium difficile Toxin A/B",
+    "C. difficile GDH/Toxin",
+    "C. diff GDH/Toxin",
+    "C. difficile PCR",
+    "C. diff PCR",
+    "Clostridioides difficile PCR",
+    "C. difficile NAAT",
+    "C. diff NAAT"
+  ],
+  "C_PEPTIDE": [
+    "C Peptide",
+    "C-Peptide",
+    "C Peptide (Insulin)",
+    "Connecting Peptide",
+    "Connecting Peptide Insulin",
+    "Proinsulin C-Peptide",
+    "Serum C-Peptide",
+    "Plasma C-Peptide"
+  ],
+  "C_REACTIVE_PROTEIN": [
+    "CRP",
+    "C-Reactive Protein",
+    "CRP (C-Reactive Protein)",
+    "C Reactive Protein"
+  ],
+  "DENGUE_FEVER": [
+    "Dengue IgG/IgM",
+    "Dengue Serology",
+    "Dengue NS1 Antigen",
+    "Dengue PCR",
+    "Dengue Virus Detection",
+    "Dengue Antibody Test",
+    "Dengue Serologic Test",
+    "Dengue Serology Panel"
+  ],
+  "DENTAL_EXAM": [],
+  "DEPRESSION": [],
+  "DEVELOPMENTAL_AND_BEHAVIORAL": [
+    "Developmental and Behavioral Screening",
+    "Developmental Screening Test",
+    "Behavioral Screening Test",
+    "Developmental and Behavioral Screening",
+    "DBS"
+  ],
+  "DHEA_SULFATE": [
+    "DHEA-S",
+    "DHEA-SO4",
+    "Dehydroepiandrosterone Sulfate",
+    "DHEA-Sulfate",
+    "DHEA-SO4 Sulfate"
+  ],
+  "DIABETES": [],
+  "DIABETIC_FOOT_EXAM": [],
+  "DIFFERENTIAL_DIAGNOSIS": [],
+  "DOPPLER_ULTRASOUND": [
+    "Doppler",
+    "Doppler US",
+    "Doppler Ultrasound Study",
+    "Doppler US Study",
+    "Doppler Vascular Ultrasound",
+    "Doppler Echocardiogram",
+    "Doppler Echocardiography",
+    "Pulsed Wave Doppler",
+    "Continuous Wave Doppler",
+    "Color Doppler",
+    "Spectral Doppler",
+    "Duplex Doppler",
+    "Duplex Ultrasound"
+  ],
+  "DOWN_SYNDROME": [],
+  "DRUG_TESTING": [
+    "DRUG SCREEN",
+    "DRUGS OF ABUSE TEST",
+    "SUBSTANCE ABUSE TEST",
+    "DRUG ASSAY",
+    "TOXICOLOGY SCREEN",
+    "DRUG TOXICOLOGY",
+    "URINE DRUG TEST",
+    "DRUG TEST",
+    "DRUGS OF ABUSE SCREEN"
+  ],
+  "DRUG_USE": [
+    "Drug Screen",
+    "Urine Drug Screen",
+    "UDS",
+    "Toxicology Screen",
+    "Substance Abuse Screen",
+    "Drug Abuse Screen",
+    "DUS"
+  ],
+  "DYSPHAGIA": [],
+  "D_DIMER": [
+    "D-Dimer",
+    "D Dimer",
+    "DDimer",
+    "D-Dimer (Quantitative)",
+    "D-Dimer, Plasma",
+    "D-Dimer, Blood",
+    "D-Dimer, Quantitative",
+    "Fibrin Degradation Fragment D-Dimer",
+    "Fibrin Fragment D-Dimer"
+  ],
+  "ECHOCARDIOGRAPHY": [
+    "ECHO",
+    "Cardiac Echo",
+    "Echocardiogram"
+  ],
+  "EGFR": [],
+  "ELASTOGRAPHY": [],
+  "ELECTROCARDIOGRAM": [
+    "ECG",
+    "EKG",
+    "Electrocardiogram (12-lead)",
+    "Standard 12-lead ECG",
+    "12-lead ECG"
+  ],
+  "ELECTROLYTE": [
+    "Electrolytes",
+    "LYTES",
+    "LYTE PANEL",
+    "LYTE PROFILE",
+    "LYTE SCREEN",
+    "LYTE STUDY",
+    "LYTE TEST",
+    "LYTE TEST PANEL",
+    "LYTE TEST PROFILE"
+  ],
+  "ELECTROMYOGRAPHY_AND_NERVE_CONDUCTION_STUDIES": [
+    "EMG/NCS",
+    "EMG & NCS",
+    "EMG with Nerve Conduction Studies",
+    "Nerve Conduction Study with EMG",
+    "Electromyography and Nerve Conduction Velocity",
+    "Nerve Conduction Velocity with EMG"
+  ],
+  "EMG": [],
+  "EOSINOPHILS": [
+    "EOS",
+    "EOSIN",
+    "Eosinophil Count",
+    "Eosinophil Differential",
+    "Eosinophil Percentage"
+  ],
+  "EPITHELIAL_CELLS": [
+    "Epithelial Cells",
+    "Epithelial Cells, Urine"
+  ],
+  "EPITHELIAL_CELLS_IN": [
+    "Epithelial Cells, Urine",
+    "Epithelial Cells Urine",
+    "Epithelial Cells, Ur",
+    "Epithelial Cells Ur",
+    "Epithelial Cells in Urine",
+    "Epithelial Cells"
+  ],
+  "ERYTHROCYTE_SEDIMENTATION_RATE": [
+    "ESR",
+    "Sed Rate"
+  ],
+  "ESOPHAGEAL_PH": [
+    "Esophageal pH Monitoring",
+    "24-Hour Esophageal pH Monitoring",
+    "Ambulatory Esophageal pH Monitoring",
+    "pH Monitoring, Esophageal",
+    "Esophageal pH Monitoring Study",
+    "Esophageal pH Probe Study",
+    "pH Probe Test, Esophageal"
+  ],
+  "ESR": [
+    "ESR",
+    "Erythrocyte Sedimentation Rate"
+  ],
+  "ESTROGEN": [
+    "Estradiol",
+    "E2",
+    "Estrogen (Total)",
+    "Serum Estrogen",
+    "Plasma Estrogen"
+  ],
+  "ESTROGEN_RECEPTOR_PROGESTERONE_RECEPTOR": [
+    "ER/PR",
+    "Estrogen Receptor/Progesterone Receptor",
+    "Estrogen and Progesterone Receptor Status",
+    "ER/PR Status",
+    "ER PR",
+    "Estrogen Receptor (ER) and Progesterone Receptor (PR)"
+  ],
+  "FALL_RISK_ASSESSMENT": [
+    "Fall Risk Score",
+    "Fall Risk Evaluation",
+    "Fall Risk Screening",
+    "Fall Risk Tool"
+  ],
+  "FASD": [],
+  "FASTING_FOR_A": [
+    "Fasting Blood Glucose",
+    "Fasting Blood Sugar",
+    "FBS",
+    "FBG"
+  ],
+  "FECAL_OCCULT": [
+    "Fecal Occult Blood",
+    "FOBT",
+    "Fecal Occult Blood Test",
+    "Fecal Immunochemical Test",
+    "FIT",
+    "Fecal Immunochemical Test for Blood",
+    "Fecal Immunochemical Occult Blood",
+    "Fecal Occult Blood Screening"
+  ],
+  "FERRITIN": [
+    "Ferritin",
+    "Serum Ferritin",
+    "Plasma Ferritin"
+  ],
+  "FETAL_ALCOHOL_SPECTRUM_DISORDERS": [],
+  "FLU": [
+    "Influenza A/B",
+    "Flu A/B",
+    "Influenza A and B",
+    "Flu A and B",
+    "Influenza Virus",
+    "Flu Virus",
+    "Respiratory Virus Panel - Influenza",
+    "RVP - Influenza"
+  ],
+  "FLUOROSCOPY": [],
+  "FOBT": [
+    "Fecal Occult Blood",
+    "Fecal Occult Blood Test",
+    "FOBT",
+    "Hemoccult",
+    "Hemoccult II",
+    "Hemoccult SENSA",
+    "Stool Occult Blood",
+    "Occult Blood, Stool",
+    "OB"
+  ],
+  "FOLATE": [
+    "Folate",
+    "Folic Acid",
+    "Folate (Serum)",
+    "Folate (RBC)",
+    "Serum Folate",
+    "Red Blood Cell Folate",
+    "RBC Folate",
+    "Folic Acid (Serum)",
+    "Folic Acid (RBC)",
+    "Vitamin B9"
+  ],
+  "FOLLICLE_STIMULATING_HORMONE": [
+    "FSH",
+    "FSH Level",
+    "Follicle Stimulating Hormone",
+    "Follicle Stimulating Hormone (FSH)",
+    "FSH (Follicle Stimulating Hormone)"
+  ],
+  "FOOD_ALLERGY_TESTING": [
+    "Allergy Testing - Food",
+    "Food Allergy Panel",
+    "Food Allergen Panel",
+    "Food Sensitivity Testing",
+    "IgE Food Allergy Panel"
+  ],
+  "FREE_LIGHT_CHAINS": [
+    "FLC",
+    "Free Light Chains, Serum",
+    "Serum Free Light Chains",
+    "\u03ba/\u03bb Free Light Chains",
+    "Free Kappa and Lambda Light Chains",
+    "Kappa/Lambda Free Light Chains",
+    "Kappa Free Light Chains",
+    "Lambda Free Light Chains"
+  ],
+  "FSH": [
+    "FSH",
+    "Follicle Stimulating Hormone",
+    "Follicle Stimulating Hormone (FSH)",
+    "FSH Level",
+    "FSH Levels"
+  ],
+  "FUNGAL_CULTURE": [
+    "Fungal Culture",
+    "Fungal Culture, Routine",
+    "Fungal Smear and Culture",
+    "Fungal Identification and Culture",
+    "Mycology Culture",
+    "Fungal Culture, Standard",
+    "Fungal Culture, General"
+  ],
+  "G6PD": [
+    "G6PD",
+    "G6PD Deficiency Test",
+    "Glucose-6-Phosphate Dehydrogenase",
+    "Glucose-6-Phosphate Dehydrogenase Deficiency Test",
+    "G-6-PD",
+    "G-6-PD Deficiency Test"
+  ],
+  "GALACTOSEMIA": [
+    "Galactose-1-Phosphate Uridyltransferase (GALT) Deficiency",
+    "GALT Deficiency",
+    "Galactosemia Enzyme Assay",
+    "Galactosemia Screen",
+    "Galactosemia Confirmatory Test",
+    "Galactosemia Metabolic Screen",
+    "Galactosemia Diagnostic Test",
+    "Galactosemia Enzyme Analysis",
+    "Galactosemia Enzyme Activity"
+  ],
+  "GAMMA_GLUTAMYL_TRANSFERASE": [
+    "GAMMA-GLUTAMYL TRANSFERASE",
+    "GGT",
+    "Gamma GT",
+    "\u03b3-Glutamyltransferase",
+    "\u03b3-Glutamyl Transpeptidase",
+    "\u03b3-GT"
+  ],
+  "GASTRIC_EMPTYING": [
+    "Gastric Emptying Study",
+    "Gastric Emptying Scan",
+    "Bolus Technetium-99m Meal Test",
+    "Bolus Technetium-99m Meal Study"
+  ],
+  "GENERAL": [
+    "Blood Profile",
+    "Complete Blood Count (CBC)"
+  ],
+  "GFR": [
+    "Serum Creatinine Clearance Test",
+    "Creatinine Clearance Test"
+  ],
+  "GGT": [
+    "Gamma-Glutamyl Transpeptidase (GGT) Test",
+    "Gamma-Glutamyl Transaminase (GGT) Test",
+    "Gamma-Glutamyl Hydrolase (GGT) Test"
+  ],
+  "GLAUCOMA": [
+    "Humphrey Field Analyzer (HFA)",
+    "Ocular Coherence Tomography (OCT)"
+  ],
+  "GLOBULIN": [
+    "Total Protein",
+    "Albumin/Globulin Ratio"
+  ],
+  "GLOMERULAR_FILTRATION_RATE": [
+    "Estimated Glomerular Filtration Rate (eGFR) Test",
+    "Creatinine Clearance Test",
+    "Renal Function Test",
+    "Kidney Function Test",
+    "Liver Function Test",
+    "Blood Urea Nitrogen (BUN) Test",
+    "Creatinine Clearance Test",
+    "Creatinine Clearance Rate Test"
+  ],
+  "GLUCAGON": [
+    "Glucagon Blood Test",
+    "Glucagon Levels Test",
+    "Glucagon Response Test",
+    "Glucagon Stimulation Test"
+  ],
+  "GLUCOSE": [
+    "Blood Sugar Test",
+    "Glucose Profile",
+    "Glucose Tolerance Test",
+    "Fasting Blood Glucose Test"
+  ],
+  "GLUCOSE_IN": [
+    "Glucose Urine Test",
+    "Glycemic Index in Urine Test"
+  ],
+  "GONORRHEA": [
+    "Neisseria Gonorrhoeae Test",
+    "Gonococcal Infection Test"
+  ],
+  "GRAM_STAIN": [
+    "Gram Diffusion Stain",
+    "Gram Diffusion Test"
+  ],
+  "GROWTH_HORMONE": [
+    "HGH Test",
+    "GH Test"
+  ],
+  "HAPTOGLOBIN": [
+    "Haptoglobin Test",
+    "Haptoglobin Levels"
+  ],
+  "HBA1C": [
+    "Glycated Hemoglobin Test",
+    "Diabetes Control Test",
+    "A1C Test",
+    "HbA1c Test",
+    "Diabetes Monitoring Test"
+  ],
+  "HBSAG": [
+    "Hepatitis B Surface Antigen",
+    "Hep B Surface Antigen",
+    "Hepatitis B Virus Surface Antigen",
+    "HBsAg"
+  ],
+  "HCT": [
+    "Hematocrit",
+    "Complete Blood Cell Count",
+    "Complete Blood Count with Hematocrit"
+  ],
+  "HDL": [
+    "HDL Cholesterol",
+    "High-density Lipoprotein Cholesterol"
+  ],
+  "HEARING_FOR_ADULTS": [
+    "Audiometry for Adults",
+    "Adult Hearing Screening"
+  ],
+  "HEARING_FOR_CHILDREN": [
+    "Audiometry for Pediatrics",
+    "Children's Hearing Assessment"
+  ],
+  "HEART_DISEASE_RISK_ASSESSMENT": [
+    "Cardiovascular Disease Risk Evaluation",
+    "Heart Health Assessment",
+    "Coronary Artery Disease Risk Profile",
+    "Atherosclerosis Risk Assessment"
+  ],
+  "HEAVY_METAL": [
+    "Metalloid Blood Test",
+    "Metal Ion Blood Test",
+    "Trace Element Blood Test"
+  ],
+  "HELICOBACTER_PYLORI": [
+    "H. Pylori Stool Antigen Test",
+    "H. Pylori Urease Breath Test",
+    "H. Pylori Antibody Test",
+    "H. Pylori DNA Test"
+  ],
+  "HEMATOCRIT": [
+    "Hct (Hematocrit) Test",
+    "Hematocrit Percentage Determination"
+  ],
+  "HEMOGLOBIN": [
+    "Hb Test",
+    "Hematocrit Test",
+    "Hemoglobin Concentration Test",
+    "Hemoglobin Level Test"
+  ],
+  "HEMOGLOBIN_A1C": [
+    "Glycated Hemoglobin",
+    "HbA1c",
+    "Diagnostic Hemoglobin A1c Test",
+    "Hemoglobin A1c Test",
+    "HbA1c Test",
+    "Diabetes Control Test",
+    "A1C Test",
+    "Hemoglobin A1c Level Test"
+  ],
+  "HEMOGLOBIN_ELECTROPHORESIS": [
+    "Hb Electrophoresis",
+    "Hemoglobin Separation Test",
+    "HbA, HbA2, HbF Test"
+  ],
+  "HEPATITIS_TESTING": [
+    "Hepatitis Panel",
+    "Hepatitis Screen",
+    "Hepatitis Assessment",
+    "Hepatitis Evaluation"
+  ],
+  "HER2": [
+    "HER2/neu Assay",
+    "HER2 Gene Expression Test",
+    "HER2 Protein Test",
+    "HER2 Oncogene Test"
+  ],
+  "HERPES": [
+    "HSV",
+    "Herpes Simplex Virus"
+  ],
+  "HGB": [
+    "Hgb",
+    "Hemogoblin",
+    "Hb"
+  ],
+  "HIV": [
+    "HIV Antibody Test",
+    "HIV Detection"
+  ],
+  "HIV_VIRAL_LOAD": [
+    "HIV-1 RNA",
+    "Viral Load HIV"
+  ],
+  "HOMOCYSTEINE": [
+    "Homocysteine Plasma",
+    "Hcy"
+  ],
+  "HOW_TO_COPE_WITH_MEDICAL_ANXIETY": [
+    "Medical Anxiety Management",
+    "Anxiety Coping Strategies",
+    "Medical Stress Reduction",
+    "Anxiety Relief Techniques",
+    "Stress Management for Medical Conditions"
+  ],
+  "HOW_TO_PREPARE_FOR_A_LAB": [
+    "preparation guidelines for laboratory testing",
+    "instructions for lab visit"
+  ],
+  "HOW_TO_PREPARE_YOUR_CHILD_FOR_A_LAB": [
+    "Child preparation for lab test",
+    "Pediatric patient preparation"
+  ],
+  "HOW_TO_UNDERSTAND_YOUR_LAB_RESULTS": [
+    "Interpretation of Laboratory Results",
+    "Lab Report Guide",
+    "Understanding Your Blood Test",
+    "Lab Result Analysis",
+    "Medical Test Insights"
+  ],
+  "HP": [
+    "Haptoglob",
+    "HG"
+  ],
+  "HPV": [
+    "HPV DNA Test",
+    "Human Papillomavirus DNA Test"
+  ],
+  "HSV": [
+    "HSV",
+    "Herpes Simplex Virus Test"
+  ],
+  "HUMAN_PAPILLOMAVIRUS": [
+    "Human papillomavirus DNA test",
+    "HPV DNA test",
+    "HPV detection test"
+  ],
+  "HYSTEROSCOPY": [
+    "Hysteroscopy",
+    "Hysterosc",
+    "Hyscop",
+    "Hystero"
+  ],
+  "IGE": [
+    "Allergy Specific IgE Test",
+    "Specific IgE to Allergen"
+  ],
+  "IGF_1": [
+    "IGF1",
+    "Insulin-like Growth Factor 1"
+  ],
+  "IGG": [
+    "IgG CSF",
+    "CSF IgG"
+  ],
+  "IMMUNOGLOBULINS": [
+    "IgG",
+    "IgA",
+    "IgM",
+    "Immunoglobulins",
+    "Total Immunoglobulins",
+    "Serum Immunoglobulins"
+  ],
+  "IMMUNOTHERAPY": [
+    "PDL1 (Immunotherapy) Tests",
+    "Immunotherapy (PDL1)"
+  ],
+  "INFLUENZA": [
+    "Flu A/B PCR",
+    "Influenza A/B Detection"
+  ],
+  "INSULIN_IN_BLOOD": [
+    "Insulin",
+    "Serum Insulin",
+    "Insulin, Serum",
+    "Fasting Insulin",
+    "Fasting Serum Insulin",
+    "Insulin Level",
+    "Serum Insulin Level",
+    "INS",
+    "Immunoreactive Insulin",
+    "IRI"
+  ],
+  "INTRAVENOUS_PYELOGRAM": [
+    "Intravenous Pyelography",
+    "IVP",
+    "IVU",
+    "Intravenous Urogram",
+    "Excretory Urogram",
+    "Excretory Urography",
+    "Intravenous Urography"
+  ],
+  "IRON": [
+    "Fe",
+    "Serum Iron",
+    "S. Iron",
+    "Iron, Serum",
+    "Iron (Serum)",
+    "Serum Fe"
+  ],
+  "IVP": [
+    "IVU",
+    "Intravenous Urogram",
+    "Excretory Urogram",
+    "IVP (Intravenous Pyelogram)",
+    "Intravenous Pyelography"
+  ],
+  "K": [
+    "K+",
+    "Potassium",
+    "K, Serum",
+    "Serum Potassium",
+    "Potassium, Serum"
+  ],
+  "KARYOTYPE_GENETIC": [
+    "Karyotype",
+    "Karyotyping",
+    "Chromosome Analysis",
+    "Chromosomal Karyotype",
+    "Chromosome Karyotype",
+    "Cytogenetic Analysis",
+    "G-Banded Karyotype",
+    "Peripheral Blood Karyotype",
+    "Bone Marrow Karyotype",
+    "Fetal Karyotype",
+    "Amniotic Fluid Karyotype",
+    "Chorionic Villus Karyotype",
+    "Karyotype Analysis",
+    "Karyotype, Blood",
+    "Karyotype, Peripheral Blood",
+    "Karyotype, Bone Marrow"
+  ],
+  "KETONES_IN": [
+    "Ketones, Urine",
+    "Urine Ketones",
+    "Ketone Bodies, Urine",
+    "KETONE, URINE",
+    "Urine Ketone"
+  ],
+  "KETONES_IN_BLOOD": [
+    "Blood Ketones",
+    "Ketone Bodies, Blood",
+    "Beta-Hydroxybutyrate",
+    "\u03b2-Hydroxybutyrate",
+    "BHB",
+    "Ketone Body",
+    "Total Ketones",
+    "Serum Ketones"
+  ],
+  "KIDNEY_STONE_ANALYSIS": [
+    "Calculus Analysis",
+    "Stone Analysis",
+    "Urinary Calculus Analysis",
+    "Renal Calculus Analysis",
+    "Kidney Calculus Analysis",
+    "Nephrolith Analysis",
+    "Stone Composition Analysis",
+    "Urinary Stone Analysis",
+    "Calculi Analysis",
+    "Renal Stone Analysis"
+  ],
+  "LACTATE": [
+    "Lactic Acid",
+    "Lactate, Blood",
+    "Lactic Acid (Lactate)",
+    "Lactate Level",
+    "Lactate, Plasma",
+    "Blood Lactate",
+    "Lactate (Lactic Acid)"
+  ],
+  "LACTATE_DEHYDROGENASE": [
+    "LDH",
+    "Lactic Dehydrogenase",
+    "Lactate Dehydrogenase, Serum",
+    "LDH (Lactate Dehydrogenase)",
+    "Lactic Acid Dehydrogenase"
+  ],
+  "LACTATE_DEHYDROGENASE_ISOENZYMES": [
+    "LDH Isoenzymes",
+    "LDH Isoenzyme",
+    "LDH Isoenzyme Pattern",
+    "LD Isoenzymes",
+    "Lactate Dehydrogenase Isoenzymes",
+    "Lactate Dehydrogenase Isoenzyme",
+    "LDH Isoenzyme Electrophoresis",
+    "LDH Fractionation",
+    "Lactate Dehydrogenase Fractionation",
+    "LDH-1",
+    "LDH-2",
+    "LDH-3",
+    "LDH-4",
+    "LDH-5"
+  ],
+  "LACTOSE_TOLERANCE": [
+    "Lactose Tolerance Test",
+    "LTT",
+    "Lactose Tolerance",
+    "Lactose Challenge Test",
+    "Lactose Absorption Test"
+  ],
+  "LAPAROSCOPY": [
+    "Laparoscopic Procedure",
+    "Laparoscopic Examination",
+    "Peritoneoscopy",
+    "Peritoneoscopic Examination"
+  ],
+  "LDH": [
+    "Lactate Dehydrogenase",
+    "LDH, Total",
+    "LDH Total",
+    "Total LDH",
+    "Lactic Dehydrogenase",
+    "Lactate Dehydrogenase (LDH)",
+    "Lactic Acid Dehydrogenase",
+    "LD (Lactate Dehydrogenase)",
+    "LDH (Lactate Dehydrogenase)"
+  ],
+  "LDL": [
+    "LDL Cholesterol",
+    "LDL-C",
+    "Low-Density Lipoprotein Cholesterol",
+    "Low Density Lipoprotein",
+    "Low-Density Lipoprotein",
+    "Direct LDL",
+    "Direct LDL Cholesterol",
+    "LDL Chol",
+    "LDL (Direct)",
+    "LDL Calculated"
+  ],
+  "LEGIONELLA": [
+    "Legionella pneumophila",
+    "Legionella Antigen",
+    "Legionella Urine Antigen",
+    "Legionella Culture",
+    "Legionella Antibody",
+    "Legionella Serology",
+    "Legionella pneumophila Antigen",
+    "Legionella pneumophila Antibody",
+    "Legionella spp.",
+    "Legionella species",
+    "Legionella PCR",
+    "Legionella Antigen Test",
+    "Legionella Antibodies",
+    "L. pneumophila"
+  ],
+  "LH": [
+    "LH",
+    "Luteinizing Hormone",
+    "Luteinising Hormone",
+    "Lutropin",
+    "Interstitial Cell Stimulating Hormone",
+    "ICSH"
+  ],
+  "LIPASE": [
+    "Lipase",
+    "Serum Lipase",
+    "Lipase, Serum",
+    "LIP"
+  ],
+  "LIPOPROTEIN": [
+    "Lp(a)",
+    "Lp (a)",
+    "Lipoprotein(a)",
+    "Lipoprotein a",
+    "Lp(a) Blood Test",
+    "Lp(a) Level",
+    "Lp(a) Concentration"
+  ],
+  "LIVER_FUNCTION": [
+    "LFT",
+    "Liver Panel",
+    "Hepatic Function Panel",
+    "Liver Function Panel",
+    "LIVER PANEL"
+  ],
+  "LUNG_CANCER_GENETIC": [
+    "Lung Cancer Genetic Panel",
+    "Lung Cancer Genetic Testing",
+    "Lung Cancer Genetic Analysis",
+    "Lung Cancer Genetic Screening",
+    "Lung Cancer Genetic Profiling",
+    "Lung Cancer Genetic Mutation Panel",
+    "Lung Cancer Genetic Sequencing"
+  ],
+  "LUNG_FUNCTION": [
+    "Pulmonary Function Tests",
+    "PFT",
+    "Spirometry",
+    "Lung Function",
+    "Respiratory Function Tests"
+  ],
+  "LUTEINIZING_HORMONE": [
+    "LH",
+    "LH LEVEL",
+    "LUTEINIZING HORMONE LEVEL",
+    "LH SERUM",
+    "LH PLASMA",
+    "LUTEINIZING HORMONE SERUM",
+    "LUTEINIZING HORMONE PLASMA"
+  ],
+  "LYME_DISEASE": [
+    "Lyme Disease Serology",
+    "Lyme Disease Serologic Test",
+    "Lyme Disease Antibody Test",
+    "Lyme Disease Serology Panel",
+    "Borrelia burgdorferi Antibody Test",
+    "B. burgdorferi Serology",
+    "Lyme Disease ELISA",
+    "Lyme Disease IFA",
+    "Lyme Disease Western Blot",
+    "Lyme Disease Serology (IgG/IgM)",
+    "Lyme Disease Serology (IgG)",
+    "Lyme Disease Serology (IgM)",
+    "Lyme Disease Serology, Serum"
+  ],
+  "LYMPHOCYTES": [
+    "LYMPH",
+    "LYMPHOCYTE COUNT",
+    "LYMPHOCYTE PERCENT",
+    "LYMPH %",
+    "LYMPH COUNT"
+  ],
+  "MAGNESIUM": [
+    "Mg",
+    "Magnesium (Mg)",
+    "Serum Magnesium",
+    "Mg (Serum)",
+    "Magnesium, Serum"
+  ],
+  "MALARIA": [
+    "Malaria Smear",
+    "Malaria Parasite Examination",
+    "Peripheral Blood Smear for Malaria",
+    "Thick and Thin Blood Smear for Malaria",
+    "Malaria Parasite Detection",
+    "Malaria Parasite Identification",
+    "Malaria Blood Film",
+    "Malaria Microscopy"
+  ],
+  "MCH": [
+    "MCH",
+    "Mean Corpuscular Hemoglobin"
+  ],
+  "MCHC": [
+    "MCHC",
+    "Mean Corpuscular Hemoglobin Concentration"
+  ],
+  "MCV": [
+    "MCV",
+    "Mean Corpuscular Volume"
+  ],
+  "MEASLES_AND_MUMPS": [
+    "Measles/Mumps Serology",
+    "Measles and Mumps Antibodies",
+    "Measles and Mumps IgG",
+    "Measles and Mumps IgM",
+    "Measles and Mumps Serologic Testing",
+    "Measles and Mumps Serology Panel",
+    "Measles and Mumps Serology (IgG/IgM)"
+  ],
+  "MEASURING_BLOOD_PRESSURE": [
+    "BP",
+    "Blood Pressure",
+    "BP (Blood Pressure)",
+    "Blood Pressure Measurement",
+    "Arterial Blood Pressure",
+    "Systemic Blood Pressure"
+  ],
+  "MENINGOCOCCAL_DISEASE": [
+    "Neisseria meningitidis Detection",
+    "Meningococcal PCR",
+    "Meningococcal NAAT",
+    "Meningococcal Nucleic Acid Amplification Test",
+    "Meningococcal Culture"
+  ],
+  "MENTAL_HEALTH": [],
+  "METHYLMALONIC_ACID": [
+    "Methylmalonic Acid, Serum",
+    "MMA, Serum",
+    "Methylmalonic Acid, Plasma",
+    "MMA, Plasma"
+  ],
+  "MG": [
+    "Magnesium, Serum",
+    "Magnesium, Plasma",
+    "Mg (Serum)",
+    "Mg (Plasma)",
+    "Serum Magnesium",
+    "Plasma Magnesium"
+  ],
+  "MICROALB": [
+    "Microalbumin/Creatinine Ratio",
+    "Urine Microalbumin/Creatinine Ratio",
+    "UMA/Cr",
+    "UACR",
+    "Micro Alb/Creat Ratio"
+  ],
+  "MICROALBUMIN_CREATININE_RATIO": [
+    "Microalbumin/Creatinine Ratio",
+    "ACR",
+    "UACR",
+    "Albumin/Creatinine Ratio"
+  ],
+  "MMA": [
+    "Methylmalonic Acid",
+    "MMA (Methylmalonic Acid)",
+    "Methylmalonyl-CoA Mutase"
+  ],
+  "MONO": [
+    "EBV Serology",
+    "Epstein-Barr Virus Serology",
+    "Infectious Mononucleosis Serology",
+    "Mono Spot",
+    "Mononucleosis Spot Test",
+    "Monospot",
+    "Paul-Bunnell Test",
+    "Heterophile Antibody Test"
+  ],
+  "MONOCYTES": [
+    "MONO",
+    "MONOCYTE COUNT",
+    "MONOCYTES, ABSOLUTE",
+    "MONOCYTES, PERCENT"
+  ],
+  "MONONUCLEOSIS": [
+    "Monospot",
+    "Infectious Mononucleosis Test",
+    "IM Test",
+    "EBV Serology",
+    "Epstein-Barr Virus Serology",
+    "EBV Antibody Test",
+    "Paul-Bunnell Test",
+    "Heterophile Antibody Test",
+    "Mononucleosis Screen"
+  ],
+  "MPV": [
+    "Mean Platelet Volume",
+    "MPV (Mean Platelet Volume)"
+  ],
+  "MRSA": [
+    "MRSA Screen",
+    "Methicillin-Resistant Staphylococcus aureus",
+    "MRSA Culture",
+    "MRSA Nasal Screen",
+    "MRSA PCR",
+    "MRSA Detection",
+    "MRSA Identification"
+  ],
+  "MTHFR_GENE": [
+    "MTHFR Gene Analysis",
+    "MTHFR Genetic Test",
+    "MTHFR Mutation Analysis",
+    "MTHFR Gene Mutation Test",
+    "MTHFR Genotyping",
+    "MTHFR Gene Sequencing"
+  ],
+  "MUCUS_IN": [
+    "Mucus in Urine",
+    "Mucus Urine",
+    "Urine Mucus"
+  ],
+  "MYASTHENIA_GRAVIS": [
+    "MG",
+    "Myasthenia Gravis Antibody Panel",
+    "Myasthenia Gravis Antibody Screen",
+    "MG Antibody Test",
+    "Acetylcholine Receptor Antibody Assay",
+    "AChR Antibody Test",
+    "Anti-AChR Antibody",
+    "MuSK Antibody Test",
+    "Anti-MuSK Antibody",
+    "Myasthenia Gravis Serology"
+  ],
+  "MYELOGRAPHY": [],
+  "NA": [
+    "Basic Metabolic Panel",
+    "BMP",
+    "Electrolyte Panel",
+    "Sodium Panel"
+  ],
+  "NASAL_SWAB": [
+    "Nasal Swab for Culture",
+    "Nasal Swab PCR",
+    "Nasal Swab NAAT",
+    "Nasal Swab RT-PCR",
+    "Nasal Swab Molecular",
+    "Nasal Swab Rapid Test",
+    "Nasal Swab Antigen",
+    "Nasal Swab Viral Test",
+    "Nasal Swab Pathogen Detection"
+  ],
+  "NATRIURETIC_PEPTIDE": [
+    "BNP",
+    "NT-proBNP",
+    "B-Type Natriuretic Peptide",
+    "N-terminal pro b-type Natriuretic Peptide",
+    "N-terminal pro-BNP",
+    "N-terminal proBNP",
+    "NT proBNP",
+    "NTpBNP",
+    "ProBNP"
+  ],
+  "NEUROLOGICAL_EXAM": [],
+  "NEUTROPHILS": [
+    "Neutrophil Count",
+    "Neutrophils, Abs",
+    "Neutrophils, Absolute",
+    "Neutrophil, Abs",
+    "Neutrophil, Absolute",
+    "NEUT",
+    "NEUTS",
+    "PMN",
+    "Polys",
+    "Polymorphonuclear leukocytes",
+    "Polymorphonuclear neutrophils"
+  ],
+  "NITRITES_IN": [
+    "NITRITE",
+    "NITRITE URINE",
+    "NITRITE, URINE",
+    "URINE NITRITE"
+  ],
+  "NONSTRESS": [
+    "NST",
+    "Non Stress Test"
+  ],
+  "OBESITY": [],
+  "OBSESSIVE_COMPULSIVE_DISORDER": [],
+  "OCD": [],
+  "OPIOID_TESTING": [
+    "Opiate Screen",
+    "Opiates, Urine",
+    "Opiates, Qualitative",
+    "Opiates, Confirmation",
+    "Opiates, Drug Screen",
+    "Opiates, Toxicology Screen",
+    "Opiate Drug Screen",
+    "Opiate Confirmation",
+    "Opiate Urine Screen",
+    "Opiate Testing",
+    "Opiates, Urine Drug Screen",
+    "Opiates, Urine Confirmation"
+  ],
+  "OSMOLALITY": [
+    "Osmolality",
+    "Serum Osmolality",
+    "Plasma Osmolality",
+    "Urine Osmolality",
+    "Serum/Plasma Osmolality",
+    "Plasma/Serum Osmolality"
+  ],
+  "OVARIAN_CANCER": [
+    "CA 125",
+    "CA125",
+    "Cancer Antigen 125",
+    "Ovarian Cancer Marker"
+  ],
+  "OVA_AND_PARASITE": [
+    "O&P",
+    "Ova & Parasite Examination",
+    "Ova and Parasite Exam",
+    "Ova and Parasite Examination",
+    "Stool O&P",
+    "Stool Ova and Parasite",
+    "Stool Ova & Parasite",
+    "Stool O&P Exam",
+    "Parasite Examination",
+    "Parasite Exam"
+  ],
+  "PANIC_DISORDER": [],
+  "PAP_SMEAR": [
+    "PAP",
+    "PAP TEST",
+    "PAP SMEAR TEST",
+    "CERVICAL CYTOLOGY",
+    "CYTOLOGY - CERVICAL",
+    "THINPREP",
+    "LIQUID-BASED CYTOLOGY",
+    "LBC"
+  ],
+  "PARAINFLUENZA": [
+    "Parainfluenza Virus",
+    "Parainfluenza Virus Detection",
+    "Parainfluenza Virus PCR",
+    "Parainfluenza Virus Antigen",
+    "PIV",
+    "PIV Detection",
+    "PIV PCR"
+  ],
+  "PARATHYROID_HORMONE": [
+    "Parathyroid Hormone",
+    "PTH",
+    "PTH Intact",
+    "Intact PTH",
+    "Parathormone",
+    "Parathyrin"
+  ],
+  "PARTIAL_THROMBOPLASTIN_TIME": [
+    "Activated Partial Thromboplastin Time",
+    "aPTT",
+    "APTT",
+    "Partial Thromboplastin Time",
+    "PTT",
+    "PTT (Partial Thromboplastin Time)"
+  ],
+  "PCR": [
+    "Polymerase Chain Reaction",
+    "PCR Test",
+    "PCR Testing",
+    "RT-PCR",
+    "Reverse Transcriptase PCR",
+    "Nucleic Acid Amplification Test",
+    "NAAT",
+    "Molecular Test",
+    "Molecular Testing",
+    "DNA Amplification Test",
+    "RNA Amplification Test",
+    "SARS-CoV-2 PCR",
+    "COVID-19 PCR",
+    "Coronavirus PCR"
+  ],
+  "PDL1": [
+    "PD-L1",
+    "PDL1 Expression",
+    "PD-L1 Expression",
+    "PD-L1 IHC",
+    "PD-L1 Immunohistochemistry",
+    "PD-L1 (Immunohistochemistry)"
+  ],
+  "PET_SCAN": [
+    "PET SCAN",
+    "Positron Emission Tomography Scan",
+    "Positron Emission Tomography"
+  ],
+  "PHARMACOGENETIC": [
+    "Pharmacogenetic Analysis",
+    "Pharmacogenomic Test",
+    "Pharmacogenomic Analysis",
+    "GeneSight Test",
+    "GeneSight Analysis"
+  ],
+  "PHENYLKETONURIA": [
+    "PKU",
+    "Phenylketonuria Screening",
+    "Phenylketonuria Test",
+    "PKU Test"
+  ],
+  "PHOS": [
+    "Phos",
+    "PO4",
+    "Phosphate",
+    "Inorganic Phosphate",
+    "Serum Phosphate",
+    "Blood Phosphate"
+  ],
+  "PHOSPHATE_IN": [
+    "Urine Phosphate",
+    "Urine PO4",
+    "Urine Phosphate (PO4)",
+    "Phosphate (Urine)",
+    "PO4 (Urine)"
+  ],
+  "PHOSPHATE_IN_BLOOD": [
+    "Phosphorus",
+    "Phos",
+    "Inorganic Phosphate",
+    "PO4",
+    "PO43-",
+    "Phosphate",
+    "Phosphorus (Inorganic)",
+    "Serum Phosphate",
+    "Plasma Phosphate"
+  ],
+  "PKU": [
+    "PKU Screen",
+    "Phenylketonuria Screen",
+    "Newborn Screening for PKU",
+    "PKU Newborn Screen",
+    "Guthrie Test"
+  ],
+  "PLATELET": [
+    "Platelet Count",
+    "PLT",
+    "Platelet"
+  ],
+  "PLEURAL_FLUID_ANALYSIS": [
+    "Pleural Fluid Analysis",
+    "Pleural Fluid Exam",
+    "Pleural Fluid Analysis, Routine",
+    "Pleural Effusion Analysis",
+    "Pleural Fluid Routine Analysis"
+  ],
+  "PLT": [
+    "Platelet Count",
+    "PLT",
+    "Platelet"
+  ],
+  "PNEUMOCOCCAL_DISEASE": [],
+  "PORPHYRIN": [
+    "Porphyrins, Total",
+    "Total Porphyrins"
+  ],
+  "POSTPARTUM_DEPRESSION": [
+    "Postpartum Depression Screen",
+    "PPD Screen",
+    "Postpartum Depression Screening Test",
+    "PPD Screening"
+  ],
+  "POTASSIUM": [
+    "K",
+    "Potassium, Serum",
+    "Serum Potassium",
+    "K+",
+    "Potassium (K)",
+    "Potassium Level"
+  ],
+  "PREALBUMIN": [
+    "Prealbumin",
+    "Transthyretin",
+    "TTR"
+  ],
+  "PREGNANCY": [
+    "Urine HCG",
+    "Serum HCG",
+    "Beta HCG",
+    "\u03b2-HCG",
+    "HCG",
+    "Human Chorionic Gonadotropin",
+    "Pregnancy HCG",
+    "HCG Qualitative",
+    "HCG Quantitative"
+  ],
+  "PRENATAL": [],
+  "PRENATAL_CELL_FREE_DNA": [
+    "NIPT",
+    "Non-Invasive Prenatal Testing",
+    "Cell-Free Fetal DNA Screening",
+    "cfDNA Screening",
+    "Prenatal cfDNA Test",
+    "Fetal Cell-Free DNA Test"
+  ],
+  "PROCALCITONIN": [
+    "PCT",
+    "Procalcitonin",
+    "Procalcitonin (PCT)"
+  ],
+  "PROGESTERONE": [
+    "Progesterone",
+    "P4",
+    "Serum Progesterone",
+    "Plasma Progesterone"
+  ],
+  "PROLACTIN": [
+    "PRL",
+    "Serum Prolactin",
+    "Prolactin, Serum",
+    "Prolactin, Plasma",
+    "Prolactin (PRL)"
+  ],
+  "PROSTATE_SPECIFIC_ANTIGEN": [
+    "PSA",
+    "Prostate Specific Antigen",
+    "Serum PSA",
+    "Total PSA",
+    "tPSA"
+  ],
+  "PROTEIN_C_AND_PROTEIN_S": [
+    "Protein C/S",
+    "PC/PS",
+    "Protein C and S",
+    "PC and PS"
+  ],
+  "PROTEIN_ELECTROPHORESIS_BY_IMMUNOFIXATION": [
+    "Immunofixation Electrophoresis",
+    "IFE",
+    "Immunofixation",
+    "Serum Immunofixation",
+    "Urine Immunofixation",
+    "Protein Immunofixation",
+    "IFE Electrophoresis"
+  ],
+  "PROTEIN_IN": [
+    "Urine Protein",
+    "Protein, Urine",
+    "Urine Protein (Dipstick)",
+    "UPRO",
+    "Urine Protein Qualitative",
+    "Urine Protein (Dipstick) Qualitative"
+  ],
+  "PROTHROMBIN_TIME_AND_INR": [
+    "PT/INR",
+    "Prothrombin Time/INR",
+    "PT and INR",
+    "Prothrombin Time and INR",
+    "PT/INR Test",
+    "Prothrombin Time/International Normalized Ratio",
+    "PT/INR (Prothrombin Time/International Normalized Ratio)"
+  ],
+  "PSA": [
+    "PSA",
+    "Prostate Specific Antigen",
+    "Prostate-Specific Antigen",
+    "Total PSA",
+    "tPSA",
+    "Serum PSA"
+  ],
+  "PTEN_GENETIC": [],
+  "PTH": [
+    "Parathyroid Hormone",
+    "iPTH",
+    "Intact PTH",
+    "PTH (Intact)"
+  ],
+  "PTT": [
+    "aPTT",
+    "Activated Partial Thromboplastin Time",
+    "Activated Partial Thromboplastin Time (aPTT)",
+    "Partial Thromboplastin Time",
+    "PTT",
+    "APTT"
+  ],
+  "PT_INR": [
+    "PT/INR",
+    "INR",
+    "Prothrombin Time (INR)",
+    "PT (INR)",
+    "International Normalized Ratio",
+    "INR (PT)"
+  ],
+  "PULSE_OXIMETRY": [
+    "SpO2",
+    "Oxygen Saturation",
+    "Pulse Ox",
+    "Pulse Oximetry Reading"
+  ],
+  "RAPID": [],
+  "RASH_EVALUATION": [],
+  "RBC": [
+    "Erythrocyte Count",
+    "RBC Count",
+    "Erythrocytes",
+    "Red Blood Cells"
+  ],
+  "RDW": [
+    "Red Cell Distribution Width",
+    "RBC Distribution Width",
+    "Red Blood Cell Distribution Width"
+  ],
+  "RDW_CV": [
+    "RDW-CV",
+    "RDW CV",
+    "Red Cell Distribution Width CV",
+    "Reticulocyte Distribution Width CV"
+  ],
+  "RED_BLOOD_CELL_ANTIBODY_SCREEN": [
+    "Autolymphocyte Screen",
+    "Autoimmune Hemolysis Screen"
+  ],
+  "RED_BLOOD_CELL_COUNT": [
+    "Hemoglobin concentration",
+    "Hematocrit (%)",
+    "Hematology: Red Blood Cell Count",
+    "RBC count (per microliter)",
+    "Erythrocyte count (per microliter)"
+  ],
+  "RED_BLOOD_CELL_INDICES": [
+    "Hematocrit",
+    "Hct",
+    "Hematism",
+    "Hematisme",
+    "Hematocrit Index",
+    "Hematocrit Ratio",
+    "Hematocrit Percentage",
+    "Hematocrit Value"
+  ],
+  "RENIN": [
+    "Renin Assay",
+    "Angiotensin Converting Enzyme (ACE) Test",
+    "Angiotensin I Converting Enzyme (AICE) Test"
+  ],
+  "RESPIRATORY_PATHOGENS": [
+    "Respiratory Microorganisms Panel",
+    "Respiratory Pathogens Screen",
+    "Respiratory Infections Testing"
+  ],
+  "RESPIRATORY_SYNCYTIAL_VIRUS": [
+    "Respiratory Syncytial Virus Screening",
+    "RSV Antigen Test",
+    "RSV Antibody Test",
+    "RSV PCR Test"
+  ],
+  "RETIC": [
+    "Reticulocyte Hemoglobin Content (RET-He)",
+    "Reticulocyte Hemoglobin Content (RET-e)"
+  ],
+  "RETICULOCYTE_COUNT": [
+    "Hematopoietic Cell Count",
+    "Erthyroid Sideroblast Percentage"
+  ],
+  "RF": [
+    "Anti-CCP Test",
+    "Rheumatoid Arthritis Test",
+    "Rheumatoid Factor Screening"
+  ],
+  "RHEUMATOID_FACTOR": [
+    "Rheumatoid Factor (RF) Test",
+    "Anti-CCP Test",
+    "Rheumatoid Arthritis Test",
+    "RF Antibody Test",
+    "Anti-CCP Antibody Test"
+  ],
+  "RH_D_TYPE": [
+    "Rhesus Factor Test",
+    "Rh Factor Test",
+    "Rhesus Typing Test",
+    "Rhesus D Test"
+  ],
+  "RSV": [
+    "RSV Antibody Test",
+    "RSV Serology",
+    "Respiratory Syncytial Virus Screening Test",
+    "RSV Panel",
+    "RSV Detection Test"
+  ],
+  "SALICYLATES": [
+    "Acetaminophen Level",
+    "Paracetamol Level"
+  ],
+  "SEMEN_ANALYSIS": [
+    "Semen Evaluation",
+    "Semen Examination"
+  ],
+  "SENTINEL_LYMPH_NODE_BIOPSY": [
+    "Lymph Node Biopsy",
+    "Sentinel Node Excision"
+  ],
+  "SEXUALLY_TRANSMITTED_INFECTION": [
+    "Sexually Transmitted Disease (STD) Test",
+    "Genital Infection Test",
+    "Sexually Transmitted Infection Panel"
+  ],
+  "SHBG": [
+    "Serum Sex Hormone Binding Globulin Test",
+    "Blood SHBG Test"
+  ],
+  "SKIN_BIOPSY": [
+    "Skin Tissue Sample Analysis",
+    "Skin Tissue Examination"
+  ],
+  "SKIN_CANCER": [
+    "Skin Neoplasia Test",
+    "Skin Tumor Analysis",
+    "Basal Cell Carcinoma Screening",
+    "Melanoma Detection"
+  ],
+  "SLEEP_STUDY": [
+    "Polysomnography",
+    "Full Sleep Study",
+    "Overnight Sleep Study",
+    "Sleep Labs Test",
+    "Sleep Apnea Test"
+  ],
+  "SMA": [
+    "Antibodies to Smooth Muscle Cells Test",
+    "Antibodies to Smooth Muscle Antigen Test"
+  ],
+  "SMOOTH_MUSCLE_ANTIBODY": [
+    "Antibodies to Smooth Muscle",
+    "SMA - Smooth Muscle Antibody Test"
+  ],
+  "SODIUM": [
+    "Na+ Levels",
+    "Blood Sodium Concentration"
+  ],
+  "SPECIFIC_GRAVITY": [
+    "Urine Osmolality Test",
+    "Urine Osmolal Gravity Test"
+  ],
+  "SPUTUM_CULTURE": [
+    "Sputum Microbiology",
+    "Sputum Examination",
+    "Bacterial Culture of Sputum",
+    "Mycobacterial Culture of Sputum"
+  ],
+  "STI": [
+    "Sexually Transmitted Infection (STI) Screen",
+    "Genital Infection Test",
+    "Sexually Transmitted Disease (STD) Test"
+  ],
+  "STOOL_ELASTASE": [
+    "Fecal Elastase Test",
+    "Elastase in Stool Test"
+  ],
+  "STREP_A": [
+    "Group A Streptococcus Test",
+    "Streptococcal Antibody Test",
+    "Anti-Streptococcal Antibody Test"
+  ],
+  "STREP_B": [
+    "Group B Streptococcus Test",
+    "GBS Test"
+  ],
+  "STRESS": [
+    "Cardiac Stress Test",
+    "Exercise Stress Test",
+    "Myocardial Perfusion Imaging",
+    "Treadmill Stress Test"
+  ],
+  "SUICIDE_RISK": [
+    "Assessment of Suicidal Ideation",
+    "Suicide Ideation Evaluation"
+  ],
+  "SWEAT_FOR_CYSTIC_FIBROSIS": [
+    "Cystic Fibrosis Screen",
+    "CF Screen",
+    "Sweat Chloride Test",
+    "Sweat Gland Function Test"
+  ],
+  "SYNOVIAL_FLUID_ANALYSIS": [
+    "Articular Fluid Analysis",
+    "Synovial Joint Fluid Analysis"
+  ],
+  "SYPHILIS": [
+    "Syphilis Serology",
+    "TPPA (Treponema Pallidum Particle Agglutination) Test"
+  ],
+  "T3": [
+    "T3 Serum",
+    "Free T3"
+  ],
+  "T4": [
+    "Thyroxine",
+    "T4 Level",
+    "T4 Hormone"
+  ],
+  "TCA": [
+    "TCA Screen",
+    "Tricyclic Antidepressants (TCA)"
+  ],
+  "TESTOSTERONE": [
+    "Testosterone",
+    "T"
+  ],
+  "THERAPEUTIC_DRUG_MONITORING": [
+    "TDM",
+    "Therapeutic Drug Assay",
+    "Pharmacokinetic Monitoring"
+  ],
+  "THYROGLOBULIN": [
+    "Thyroglobulin Antibodies",
+    "Tg Ab"
+  ],
+  "THYROID_ANTIBODIES": [
+    "Thyroid Antibodies",
+    "Thyroid Autoantibodies",
+    "Thyroid Peroxidase Antibodies",
+    "TPO Antibodies",
+    "Thyroglobulin Antibodies",
+    "TGA Antibodies"
+  ],
+  "THYROXINE": [
+    "T4",
+    "Thyroxine"
+  ],
+  "TOCOPHEROL": [
+    "Vitamin E",
+    "Tocopherol Level",
+    "Tocopherol Assay",
+    "Tocopherol Measurement"
+  ],
+  "TOTAL_PROTEIN": [
+    "Total Protein",
+    "TP",
+    "Protein, total"
+  ],
+  "TOTAL_PROTEIN_AND_ALBUMIN_GLOBULIN_RATIO": [
+    "A/G Ratio",
+    "Albumin/Globulin Ratio",
+    "Total Protein A/G Ratio"
+  ],
+  "TP53_GENETIC": [
+    "TP53 Mutation Analysis",
+    "TP53 Genetic Analysis"
+  ],
+  "TRICHOMONIASIS": [
+    "Trichomoniasis",
+    "Trichomoniasis Screen",
+    "Trichomoniasis, Screen for",
+    "Trichomoniasis, Detection of"
+  ],
+  "TRICYCLIC_ANTIDEPRESSANT_SCREEN": [
+    "TCA Screen",
+    "Tricyclic Antidepressant Test"
+  ],
+  "TRIG": [
+    "Triglyceride Test",
+    "TG Test",
+    "Triacylglycerol Test"
+  ],
+  "TRIGLYCERIDES": [
+    "Triglyceride Test",
+    "TG Test"
+  ],
+  "TRIIODOTHYRONINE": [
+    "T3",
+    "Triiodothyronine"
+  ],
+  "TROPONIN": [
+    "Troponin-I",
+    "Troponin T",
+    "cTrop I",
+    "cTrop T",
+    "Troponin-C",
+    "Trop I",
+    "Trop T"
+  ],
+  "TSH": [
+    "TSH",
+    "Thyroid Stimulating Hormone",
+    "Thyrotropin",
+    "Thyrotropin-stimulating hormone"
+  ],
+  "TUBERCULOSIS": [
+    "TB Screening",
+    "TB Screen",
+    "Tuberculosis Screen",
+    "Tuberculosis Testing",
+    "TB Testing",
+    "TB Test",
+    "Tuberculosis Test",
+    "TB Skin Test",
+    "TST",
+    "PPD",
+    "PPD Test",
+    "Purified Protein Derivative",
+    "Mantoux Test",
+    "IGRA",
+    "Interferon-Gamma Release Assay",
+    "QuantiFERON-TB",
+    "QuantiFERON-TB Gold",
+    "QFT-G",
+    "QFT-Plus",
+    "T-SPOT.TB",
+    "TB Blood Test",
+    "TB Gold",
+    "TB Antigen",
+    "Mycobacterium tuberculosis Screening",
+    "M. tuberculosis Screening",
+    "Acid-Fast Bacillus Smear",
+    "AFB Smear",
+    "TB Smear",
+    "Sputum AFB"
+  ],
+  "TUMOR_MARKER": [
+    "Cancer Marker",
+    "Cancer Markers",
+    "Tumor Markers",
+    "Tumor Marker",
+    "Tumor Marker Panel",
+    "Cancer Antigen Panel",
+    "Tumor Marker Screening"
+  ],
+  "ULTRASOUND": [
+    "Ultrasonography",
+    "US",
+    "Sonogram",
+    "Sonography",
+    "Diagnostic Ultrasound",
+    "B-Mode Ultrasound",
+    "Gray-Scale Ultrasound",
+    "Brightness Mode Ultrasound"
+  ],
+  "UREA": [
+    "BUN",
+    "Blood Urea Nitrogen",
+    "Urea Nitrogen",
+    "Blood Urea",
+    "Urea",
+    "Serum Urea",
+    "Plasma Urea"
+  ],
+  "URIC_ACID": [
+    "Uric Acid",
+    "URIC ACID",
+    "Serum Uric Acid",
+    "Plasma Uric Acid",
+    "Urate",
+    "Serum Urate",
+    "Plasma Urate",
+    "UA",
+    "Uric Acid, Serum",
+    "Uric Acid, Plasma",
+    "Uric Acid (Blood)",
+    "Blood Uric Acid"
+  ],
+  "URINE_BILIRUBIN": [
+    "Bilirubin, Urine",
+    "Urine Bilirubin",
+    "BILI URINE",
+    "BILI U",
+    "Urine Bili"
+  ],
+  "URINE_BLOOD": [
+    "Blood, Urine",
+    "Urine Blood",
+    "Urine Occult Blood",
+    "Occult Blood, Urine",
+    "OB, Urine"
+  ],
+  "URINE_COLOUR": [],
+  "URINE_GLUCOSE": [
+    "Urine Glucose",
+    "Glucose, Urine",
+    "GLUCOSE, URINE",
+    "GLU",
+    "URINE GLU"
+  ],
+  "URINE_KETONES": [
+    "KETONES, URINE",
+    "Urine Ketones",
+    "KETONES UR",
+    "KETONES (URINE)",
+    "KETONES, UR",
+    "KETONES"
+  ],
+  "URINE_LEUKOCYTES": [
+    "Urine Leukocytes",
+    "LEUKOCYTES, URINE",
+    "WBC, URINE",
+    "White Blood Cells, Urine",
+    "Urine WBC",
+    "WBC URINE",
+    "LEUK EST",
+    "Leukocyte Esterase"
+  ],
+  "URINE_NITRITES": [
+    "Nitrites",
+    "Urine Nitrites",
+    "Nitrites, Urine"
+  ],
+  "URINE_PH": [],
+  "URINE_PROTEIN": [
+    "Protein, Urine",
+    "Urine Protein",
+    "Urine Protein, Total",
+    "Total Protein, Urine",
+    "Urine Protein (Qualitative)",
+    "Urine Protein (Quantitative)",
+    "Protein (Urine)",
+    "Protein, Urine Total"
+  ],
+  "UROBILINOGEN": [
+    "Urobilinogen Urine",
+    "Urobilinogen, Urine",
+    "Urobilinogen (Urine)",
+    "Urobilinogen Qualitative",
+    "Urobilinogen, Qualitative"
+  ],
+  "UROBILINOGEN_IN": [
+    "Urobilinogen Urine",
+    "Urobilinogen, Urine",
+    "Urobilinogen (Urine)",
+    "Urobilinogen"
+  ],
+  "VIDEONYSTAGMOGRAPHY": [
+    "VNG",
+    "Videonystagmography (VNG)"
+  ],
+  "VISION": [],
+  "VITAMIN_B": [],
+  "VITAMIN_D": [
+    "25-Hydroxy Vitamin D",
+    "25-OH Vitamin D",
+    "25(OH)D",
+    "25-Hydroxycalciferol",
+    "Vitamin D 25-Hydroxy",
+    "Vit D 25-OH",
+    "Calcifediol",
+    "25-Hydroxycholecalciferol"
+  ],
+  "VITAMIN_E": [
+    "Vitamin E",
+    "Tocopherol",
+    "\u03b1-Tocopherol",
+    "Beta-Tocopherol",
+    "Gamma-Tocopherol",
+    "Delta-Tocopherol"
+  ],
+  "VIT_D": [
+    "25-Hydroxy Vitamin D",
+    "25-OH Vitamin D",
+    "25(OH)D",
+    "25 Hydroxy D",
+    "25 Hydroxy Vitamin D",
+    "Vitamin D, 25-Hydroxy",
+    "Vitamin D2 + D3",
+    "Vitamin D Total"
+  ],
+  "VNG": [
+    "VNG",
+    "Videonystagmography",
+    "VNG Test",
+    "VNG Study"
+  ],
+  "V_Q_SCAN": [
+    "Ventilation/Perfusion Scan",
+    "Ventilation-Perfusion Scan",
+    "V/Q Scan",
+    "VQ Scan",
+    "Ventilation Perfusion Imaging",
+    "Ventilation/Perfusion Imaging",
+    "Ventilation-Perfusion Imaging",
+    "V/Q Imaging",
+    "Ventilation/Perfusion Study",
+    "Ventilation-Perfusion Study",
+    "V/Q Study"
+  ],
+  "WBC": [
+    "WBC",
+    "White Blood Cell Count",
+    "White Blood Count",
+    "Leukocyte Count",
+    "Leukocyte Count (WBC)",
+    "WBC Count",
+    "Total WBC",
+    "WBC Differential"
+  ],
+  "WHAT_YOU_NEED_TO_KNOW_ABOUT_BLOOD_TESTING": [],
+  "WHITE_BLOOD_CELL_IN_STOOL": [
+    "Fecal Leukocytes",
+    "Fecal WBC",
+    "Stool Leukocytes",
+    "Stool WBC"
+  ],
+  "WHITE_BLOOD_COUNT": [
+    "WBC",
+    "White Blood Cell Count",
+    "Leukocyte Count",
+    "Leukocyte Count (WBC)",
+    "WBC Count"
+  ],
+  "WHOOPING_COUGH": [
+    "Pertussis",
+    "Pertussis PCR",
+    "Bordetella pertussis PCR",
+    "Pertussis by PCR",
+    "Pertussis (Whooping Cough)"
+  ],
+  "XYLOSE_TESTING": [
+    "D-Xylose Absorption Test",
+    "D-Xylose Tolerance Test",
+    "Xylose Absorption Test",
+    "Xylose Tolerance Test"
+  ],
+  "YEAST_INFECTION": [
+    "Candidiasis Tests",
+    "Candida Culture",
+    "Fungal Culture - Yeast",
+    "Yeast Culture",
+    "Yeast Identification",
+    "Yeast PCR"
+  ],
+  "ZIKA_VIRUS": [
+    "Zika Virus PCR",
+    "Zika Virus NAT",
+    "Zika Virus RNA",
+    "ZIKV PCR",
+    "ZIKV NAT",
+    "ZIKV RNA"
+  ]
+}

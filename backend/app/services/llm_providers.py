@@ -228,6 +228,166 @@ def call_cerebras(
     return json.loads(_clean_json_string(content))
 
 
+def call_cohere(
+    system: str,
+    prompt: Union[str, list],
+    max_tokens: int = 2500,
+    model: str = None,
+    timeout: float = None
+) -> dict:
+    """Cohere v2 Chat API, text-only.
+
+    Scaffolded ahead of a key being available, same pattern as call_cerebras.
+
+    Response shape is NOT choices[0].message.content (OpenAI-style) -- v2
+    nests reply text inside message.content as an array of typed content
+    items, e.g. [{"type": "text", "text": "..."}]. Reasoning-capable models
+    (Command A+ etc.) can prepend a "thinking" block before the "text"
+    block, so this must find the "text"-typed item rather than assume
+    content[0] -- the same failure class as the NVIDIA reasoning models
+    (nemotron-3-super-120b-a12b, meta/muse-glimmer-30b) that split output
+    into a separate reasoning block and broke a naive content[0] parse.
+
+    BUG FOUND: response_format={"type": "json_object"} is NOT supported by
+    every model in Cohere's own lineup -- c4ai-aya-expanse-32b and
+    c4ai-aya-vision-32b both hard-reject it with a 400 ("response_format is
+    not supported with the specified model"). Dropping it universally fixed
+    those two, but broke command-a-reasoning-08-2025 the other way: without
+    the schema enforcement, its free-form JSON output isn't always strictly
+    valid (one attempt failed to parse on a missing delimiter) even though
+    the same model passed cleanly WITH response_format. Neither choice
+    alone covers every model, so this tries response_format first and only
+    drops it on that specific "not supported" 400 -- not on any other
+    error, which should surface normally instead of being masked by a
+    silent retry.
+    """
+    if not settings.cohere_api_key:
+        raise ValueError("COHERE_API_KEY is not configured in .env!")
+
+    if isinstance(prompt, list) and any(b.get("type") == "image_url" for b in prompt if isinstance(b, dict)):
+        raise ValueError("call_cohere is text-only and cannot process image content blocks.")
+
+    user_content = prompt
+    if isinstance(prompt, list):
+        user_content = " ".join([b["text"] for b in prompt if isinstance(b, dict) and b.get("type") == "text"])
+
+    target_model = model or settings.cohere_model
+    if not target_model:
+        raise ValueError("No Cohere model configured -- set 'model' or cohere_model.")
+
+    headers = {
+        "Authorization": f"Bearer {settings.cohere_api_key}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "model": target_model,
+        "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_content},
+        ],
+    }
+    resp = requests.post("https://api.cohere.com/v2/chat", headers=headers, json=body,
+                          timeout=_resolve_timeout(timeout))
+    if resp.status_code == 400 and "response_format is not supported" in resp.text:
+        body.pop("response_format")
+        resp = requests.post("https://api.cohere.com/v2/chat", headers=headers, json=body,
+                              timeout=_resolve_timeout(timeout))
+    resp.raise_for_status()
+    data = resp.json()
+    items = data.get("message", {}).get("content", []) or []
+    text = next((it.get("text", "") for it in items if isinstance(it, dict) and it.get("type") == "text"), "")
+    if not text and items and isinstance(items[0], dict):
+        text = items[0].get("text", "")
+    return json.loads(_clean_json_string(text or "{}"))
+
+
+def call_cloudflare(
+    system: str,
+    prompt: Union[str, list],
+    max_tokens: int = 2500,
+    model: str = None,
+    timeout: float = None
+) -> dict:
+    """Cloudflare Workers AI REST API, text-only until a vision model is
+    confirmed on this account.
+
+    BUG FOUND (2026-08-28), live-verified across ~19 models: Workers AI has
+    TWO DIFFERENT response shapes depending on model family, not one --
+    - Newer/chat-completions-style models (gpt-oss, llama-3.3-70b,
+      llama-4-scout, llama-3.2-3b, glm-4.7-flash, granite, gemma-4, qwen3-
+      family, nemotron, mistral-small-3.1, gemma-sea-lion) return OpenAI-
+      compatible result.choices[0].message.content, a JSON *string*.
+    - Older/legacy models (llama-3.2-1b, qwen2.5-coder-32b, and likely
+      others not yet hit) have NO "choices" key at all -- instead
+      result.response holds the answer directly, and it can be EITHER a
+      JSON string (llama-3.2-1b) OR an already-parsed dict (qwen2.5-coder-
+      32b: Workers AI parsed it for us because the model used tool-calling-
+      style structured output).
+    First placeholder guessed only the legacy shape and got the parsing
+    wrong (assumed result.response is always a string); the immediate next
+    guess assumed only the chat-completions shape. Neither alone covers the
+    account's real model lineup -- this checks for choices first (the more
+    common case among the models that passed), then falls back to
+    result.response, returning it as-is if already a dict/list rather than
+    trying to json.loads() something that isn't a string.
+
+    Reasoning models (gpt-oss, qwq, deepseek-r1-distill) put chain-of-
+    thought in a separate reasoning_content field, not prepended to content
+    like Cohere's Command A+ -- so no reasoning-block-stripping needed here.
+    They DO need a larger max_tokens budget than non-reasoning models,
+    though: at 800 several returned empty content because the hidden
+    reasoning consumed the whole budget before any answer was written;
+    2000-4000 cleared that for every reasoning model that otherwise worked.
+    """
+    if not settings.cloudflare_api_key:
+        raise ValueError("CLOUDFLARE_API_KEY is not configured in .env!")
+    if not settings.cloudflare_account_id:
+        raise ValueError("CLOUDFLARE_ACCOUNT_ID is not configured in .env!")
+
+    if isinstance(prompt, list) and any(b.get("type") == "image_url" for b in prompt if isinstance(b, dict)):
+        raise ValueError("call_cloudflare is text-only and cannot process image content blocks.")
+
+    user_content = prompt
+    if isinstance(prompt, list):
+        user_content = " ".join([b["text"] for b in prompt if isinstance(b, dict) and b.get("type") == "text"])
+
+    target_model = model or settings.cloudflare_model
+    if not target_model:
+        raise ValueError("No Cloudflare model configured -- set 'model' or cloudflare_model.")
+
+    url = f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/run/{target_model}"
+    resp = requests.post(
+        url,
+        headers={
+            "Authorization": f"Bearer {settings.cloudflare_api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "max_tokens": max_tokens,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content},
+            ],
+        },
+        timeout=_resolve_timeout(timeout),
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if not data.get("success", True):
+        raise ValueError(f"Cloudflare Workers AI error: {data.get('errors')}")
+    result = data.get("result", {})
+    choices = result.get("choices", []) or []
+    if choices:
+        content = choices[0].get("message", {}).get("content", "")
+        return json.loads(_clean_json_string(content or "{}"))
+    legacy_response = result.get("response")
+    if isinstance(legacy_response, (dict, list)):
+        return legacy_response
+    return json.loads(_clean_json_string(legacy_response or "{}"))
+
+
 def call_openrouter(
     system: str, 
     prompt: Union[str, list], 
@@ -362,9 +522,11 @@ PROVIDERS = {
     "openrouter": call_openrouter,
     "nvidia": call_nvidia,
     "cerebras": call_cerebras,
+    "cohere": call_cohere,
+    "cloudflare": call_cloudflare,
 }
 
-VISION_CAPABLE = {"gemini", "openrouter", "nvidia", "mistral"}  # cerebras: text-only
+VISION_CAPABLE = {"gemini", "openrouter", "nvidia", "mistral"}  # cerebras, cohere, cloudflare: text-only
 
 _PROVIDER_KEY_ATTR = {
     "gemini": "gemini_api_key",
@@ -373,6 +535,8 @@ _PROVIDER_KEY_ATTR = {
     "openrouter": "openrouter_api_key",
     "nvidia": "nvidia_api_key",
     "cerebras": "cerebras_api_key",
+    "cohere": "cohere_api_key",
+    "cloudflare": "cloudflare_api_key",
 }
 
 

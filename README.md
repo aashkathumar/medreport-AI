@@ -129,7 +129,7 @@ In another terminal:
 ```bash
 cd frontend
 pip install -r requirements.txt
-streamlit run app.py
+streamlit run App.py
 ```
 
 Open **http://localhost:8501**, upload `backend/tests/sample_report.pdf`

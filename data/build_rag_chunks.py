@@ -34,6 +34,8 @@ import requests
 from bs4 import BeautifulSoup
 
 _DATA_DIR = Path(__file__).parent.parent / "data"
+sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+from app.services.reference_db import canonicalize_test_name  # noqa: E402
 
 USER_AGENT = (
     "MedReportAI-RAG/1.0 (academic dissertation project; "
@@ -212,6 +214,84 @@ SOURCES = [
 ]
 
 
+# --------------------------------------------------------------------------
+# Auto-discovery: MedlinePlus's own A-Z lab-tests index
+# --------------------------------------------------------------------------
+# CHANGED: the hand-curated SOURCES list above covers ~76 test_ids from
+# ~60 manually-picked URLs. Checked live: medlineplus.gov/lab-tests/ alone
+# lists 300+ individual test pages -- the curated list was using under a
+# quarter of MedlinePlus's own lab-tests catalog, not because NHS/NIH don't
+# cover more, but because nobody had crawled the index page itself.
+# _MEDLINEPLUS_INDEX below fetches that index and scrapes every linked page
+# the same way as SOURCES, instead of relying on someone hand-typing URLs
+# one at a time.
+_MEDLINEPLUS_INDEX = "https://medlineplus.gov/lab-tests/"
+
+
+def discover_medlineplus_lab_tests(session: requests.Session) -> list[dict]:
+    """Returns [{"url":..., "ids":[...], "src": MEDLINEPLUS}, ...] for every
+    page linked from MedlinePlus's lab-tests A-Z index."""
+    html = fetch(_MEDLINEPLUS_INDEX, session)
+    soup = BeautifulSoup(html, "html.parser")
+    root = _content_root(soup)
+    discovered = []
+    seen_urls = set()
+    for a in root.find_all("a", href=True):
+        href = a["href"]
+        if not re.match(r"^https://medlineplus\.gov/lab-tests/[a-z0-9\-]+/?$", href):
+            continue
+        if href in seen_urls:
+            continue
+        seen_urls.add(href)
+        title = clean_text(a.get_text(" "))
+        if not title:
+            continue
+        discovered.append({"url": href, "ids": _derive_test_ids(title), "src": MEDLINEPLUS})
+    return discovered
+
+
+def _derive_test_ids(title: str) -> list[str]:
+    """Best-effort canonical test_id(s) for an auto-discovered page.
+
+    A scraped chunk is only reachable at explanation time if it's tagged
+    with the SAME id a real report's raw field name resolves to via
+    reference_db.canonicalize_test_name() -- not just whatever the page's
+    own title happens to be. canonicalize_test_name() is deliberately
+    narrow (see its own docstring) and does NOT strip words like "Test" or
+    "Levels", but a real lab report prints "Aldosterone", not "Aldosterone
+    Test" -- so that stripping has to happen here, or every auto-discovered
+    chunk would sit unused under a title-shaped id nothing ever matches.
+    Also splits out any parenthetical abbreviation ("Adrenocorticotropic
+    Hormone (ACTH)") as its OWN candidate id, since reports commonly print
+    the abbreviation alone rather than the full name.
+    """
+    ids = []
+    # Minimum 2 chars -- a real medical abbreviation is never a single
+    # letter, but a stray "(a)" (e.g. "Lipoprotein (a) Blood Test") would
+    # otherwise canonicalize to the bogus id "A", which is dangerous: a
+    # PDF extraction artifact from an unrelated report (a stray footnote
+    # marker literally named "a") could then wrongly ground against real
+    # lipoprotein(a) reference text.
+    for paren in re.findall(r"\(([A-Za-z0-9\-/ ]{2,15})\)", title):
+        cand = canonicalize_test_name(paren)
+        if cand and cand != "UNKNOWN_TEST" and cand not in ids:
+            ids.append(cand)
+    base = re.sub(r"\([^)]*\)", " ", title)
+    # Multi-word phrases first ("Blood Test" as a unit), or the bare "test"
+    # rule alone leaves "Blood" behind (e.g. "ALT Blood Test" -> "ALT_BLOOD"
+    # instead of "ALT", which then can't match the corpus's existing "ALT"
+    # tag from the curated list).
+    base = re.sub(
+        r"\b(tumor\s*marker\s*test|blood\s*tests?|screening\s*tests?|"
+        r"test|tests|screening|panel|levels?)\b",
+        " ", base, flags=re.IGNORECASE,
+    )
+    cand = canonicalize_test_name(base)
+    if cand and cand != "UNKNOWN_TEST" and cand not in ids:
+        ids.append(cand)
+    return ids or [canonicalize_test_name(title)]
+
+
 # Section headings that carry no information about what a result means.
 # Dropping them keeps the index focused on explanation-bearing text.
 _SKIP_HEADING_RE = re.compile(
@@ -346,13 +426,25 @@ def build() -> int:
     failures: list[tuple[str, str]] = []
     chunk_id = 0
 
+    print("Discovering MedlinePlus lab-tests index ...")
+    try:
+        discovered = discover_medlineplus_lab_tests(session)
+        print(f"  found {len(discovered)} pages on the index")
+    except Exception as e:
+        print(f"  FAILED to fetch the index: {e} -- continuing with the curated list only")
+        discovered = []
+    time.sleep(POLITE_DELAY_SEC)
+
     # Merge entries that point at the same URL, unioning their test_ids.
     # Without this, listing a page twice for different analytes (the CBC page
     # covers MCV in one entry and MCH/MCHC in another) meant the second entry
     # was silently discarded by the duplicate-text check, and those analytes
-    # ended up with no coverage at all.
+    # ended up with no coverage at all. The auto-discovered pages are merged
+    # in the SAME way -- a curated entry's hand-verified ids and an
+    # auto-discovered entry's derived ids for the same URL simply union,
+    # with the curated ids added second so they're never displaced.
     merged: dict = {}
-    for target in SOURCES:
+    for target in discovered + SOURCES:
         entry = merged.setdefault(
             target["url"], {"url": target["url"], "src": target["src"], "ids": []}
         )

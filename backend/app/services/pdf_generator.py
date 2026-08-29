@@ -14,10 +14,15 @@ GREEN = HexColor("#2E8B57")
 AMBER = HexColor("#FFA500")
 RED = HexColor("#B22222")
 LGREY = HexColor("#F5F5F5")
+# Distinct from LGREY (the banner background) -- using LGREY for both meant
+# UNKNOWN-status text was rendered in the same colour as its own background
+# and was completely invisible (e.g. CHOL/HDL Ratio, LDL/HDL Ratio, any
+# computed value with no standard reference range).
+DGREY = HexColor("#888888")
 
 STATUS_COLOUR = {
     RangeStatus.NORMAL: GREEN, RangeStatus.LOW: RED,
-    RangeStatus.HIGH: AMBER, RangeStatus.UNKNOWN: LGREY,
+    RangeStatus.HIGH: AMBER, RangeStatus.UNKNOWN: DGREY,
 }
 STATUS_LABEL = {
     RangeStatus.NORMAL: "Within normal range",
@@ -25,6 +30,29 @@ STATUS_LABEL = {
     RangeStatus.HIGH: "Above normal range",
     RangeStatus.UNKNOWN: "Range unknown",
 }
+
+# LLM output occasionally contains Unicode dash/hyphen variants (most often
+# U+2011 NON-BREAKING HYPHEN, e.g. "iron‑rich") that have no glyph in
+# ReportLab's base Helvetica font (WinAnsi/CP1252 encoding) -- it doesn't
+# raise, it silently renders a black notdef box in the PDF instead, so this
+# has to be caught here rather than relying on an exception. En/em dashes,
+# curly quotes, and ellipsis ARE in CP1252 and render fine as-is; only the
+# hyphen variants CP1252 doesn't cover need remapping.
+_UNSUPPORTED_CHARS = {
+    "‐": "-",  # HYPHEN
+    "‑": "-",  # NON-BREAKING HYPHEN
+    "‒": "-",  # FIGURE DASH
+    "―": "-",  # HORIZONTAL BAR
+    "−": "-",  # MINUS SIGN
+}
+
+
+def _sanitize(text):
+    if not isinstance(text, str):
+        return text
+    for bad, good in _UNSUPPORTED_CHARS.items():
+        text = text.replace(bad, good)
+    return text
 
 
 def generate_report_pdf(
@@ -62,15 +90,15 @@ def generate_report_pdf(
         ),
         Spacer(1, 10),
         Paragraph("Overall Summary", head_s),
-        Paragraph(overall_summary, body_s),
+        Paragraph(_sanitize(overall_summary), body_s),
     ]
 
     if top_gp_topics:
         story.append(Paragraph("Topics to discuss with your GP:", body_s))
         for t in top_gp_topics:
-            story.append(Paragraph(f"- {t}", body_s))
+            story.append(Paragraph(f"- {_sanitize(t)}", body_s))
 
-    story.append(Paragraph(f"<b>Top lifestyle change:</b> {top_lifestyle_change}", body_s))
+    story.append(Paragraph(f"<b>Top lifestyle change:</b> {_sanitize(top_lifestyle_change)}", body_s))
     story.append(HRFlowable(width="100%", thickness=0.5, color=LGREY, spaceAfter=6))
     story.append(Paragraph("Your Results -- Explained", head_s))
 
@@ -79,7 +107,7 @@ def generate_report_pdf(
         label = STATUS_LABEL[r.status]
         banner = Table(
             [[
-                Paragraph(f"<b>{r.raw_name}</b>", body_s),
+                Paragraph(f"<b>{_sanitize(r.raw_name)}</b>", body_s),
                 Paragraph(
                     f"<b>{r.value} {r.unit}</b> &nbsp; {label}",
                     ParagraphStyle("BL", parent=body_s, textColor=col),
@@ -94,13 +122,13 @@ def generate_report_pdf(
         ]))
         story += [
             banner, Spacer(1, 4),
-            Paragraph(r.what_it_measures, body_s),
-            Paragraph(f"<b>Your result:</b> {r.what_your_result_means}", body_s),
+            Paragraph(_sanitize(r.what_it_measures), body_s),
+            Paragraph(f"<b>Your result:</b> {_sanitize(r.what_your_result_means)}", body_s),
         ]
         if r.lifestyle_suggestions:
             story.append(Paragraph("<b>Lifestyle suggestions:</b>", body_s))
             for sug in r.lifestyle_suggestions:
-                story.append(Paragraph(f"- {sug}", body_s))
+                story.append(Paragraph(f"- {_sanitize(sug)}", body_s))
         # Cite the actual retrieved reference pages, not just a source label,
         # so a reader (or an examiner) can check any explanation against the
         # NHS/MedlinePlus page it was grounded in.
@@ -109,14 +137,14 @@ def generate_report_pdf(
             source_line += f'<br/><font size="7">{url}</font>'
 
         story += [
-            Paragraph(f"<b>Ask your GP:</b> {r.gp_question}", body_s),
+            Paragraph(f"<b>Ask your GP:</b> {_sanitize(r.gp_question)}", body_s),
             Paragraph(source_line, disc_s),
             Spacer(1, 10),
         ]
 
     story += [
         HRFlowable(width="100%", thickness=1, color=BLUE, spaceBefore=6),
-        Paragraph(closing_message, body_s),
+        Paragraph(_sanitize(closing_message), body_s),
         Spacer(1, 6),
         Paragraph(
             "Educational tool evaluated on synthetic test data. Reference texts sourced from NHS UK "

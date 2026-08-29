@@ -30,6 +30,44 @@ _DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
 # raw names extracted from a report resolve to the same curated entry
 # regardless of exact wording.
 ALIAS_MAP = {
+    # BUG FOUND (PK0016.pdf): these raw field labels had NO alias entry at
+    # all, so they canonicalized to a synthetic id (e.g. "CHLORIDE") that
+    # never matches the corpus's real tag for the same analyte (e.g. "CL")
+    # -- 11 of PK0016's 19 "not covered" rejections were this, not a
+    # missing-source problem: the corpus already had grounding content for
+    # every one of these, just filed under a different canonical id.
+    # tc_hdl_ratio/sgot_sgpt_ratio are lower-confidence: they ground on the
+    # component analyte, not a dedicated "ratio" source page, same pattern
+    # already proven to work for CHOL/HDL Ratio and LDL/HDL Ratio (no alias
+    # needed there -- semantic retrieval alone found the cholesterol/HDL
+    # content and the LLM synthesized a reasonable explanation from it).
+    "urinary_transparency": "CLEARITY",
+    "leukocyte_esterase": "URINE_LEUKOCYTES",
+    "absolute_lymphocyte_count": "LYMPHOCYTES",
+    "absolute_monocyte_count": "MONOCYTES",
+    "absolute_eosinophil_count": "EOSINOPHILS",
+    "absolute_basophil_count": "BASOPHILS",
+    "blood_sugar_fasting": "GLUCOSE",
+    "chloride": "CL",
+    "90_day_average_blood_glucose": "HBA1C",
+    "tc_hdl_ratio": "CHOL",
+    "sgot_sgpt_ratio": "AST",
+
+    # BUG FOUND (LabReport.pdf, QuantiFERON-TB Gold panel): none of these
+    # 4 component-tube names have an alias, so all 5 rows on this report
+    # showed "not covered" -- but the corpus already has a "Tuberculosis
+    # Screening" page (test_id TUBERCULOSIS) that explicitly covers IGRA
+    # blood tests (this exact methodology) and explains positive/negative
+    # results. "Final Result" deliberately NOT aliased here despite being
+    # on the same report -- it's too generic a label (other multi-row
+    # panels likely reuse "Final Result" for an unrelated summary line),
+    # so a global alias would risk grounding a different test's result on
+    # TB content. The 4 TB-specific tube names are unique enough to be safe.
+    "tb_nil_tube": "TUBERCULOSIS",
+    "tb_antigen_tube": "TUBERCULOSIS",
+    "tb_mitogen_tube": "TUBERCULOSIS",
+    "tb_ag_minus_nil": "TUBERCULOSIS",
+
     "hb": "HGB", "haemoglobin": "HGB", "hemoglobin": "HGB", "hgb": "HGB",
     "hba1c": "HBA1C", "glycated_haemoglobin": "HBA1C", "a1c": "HBA1C",
     "wbc": "WBC", "white_blood_cell": "WBC", "white_blood_cell_count": "WBC",
@@ -219,6 +257,32 @@ def _load_reference_db() -> Dict[str, Dict[str, Any]]:
 
 
 REFERENCE_DB = _load_reference_db()
+
+
+def _load_generated_aliases() -> None:
+    """Merges LLM-generated synonym candidates (scripts/generate_test_synonyms.py)
+    into ALIAS_MAP.
+
+    The generator script already excludes anything ambiguous (proposed for
+    two different test_ids) or colliding with an existing alias pointing
+    elsewhere -- what's in this file passed both checks. setdefault() here
+    is a second, defense-in-depth guarantee of the same rule: a hand-curated
+    or earlier-loaded entry can never be silently overwritten by a
+    generated one, regardless of what the file contains.
+    """
+    path = _DATA_DIR / "llm_generated_aliases_accepted.json"
+    if not path.exists():
+        return
+    try:
+        generated = json.loads(path.read_text())
+    except Exception as e:
+        print(f"Could not load generated aliases from {path}: {e}")
+        return
+    for key, test_id in generated.items():
+        ALIAS_MAP.setdefault(key, test_id)
+
+
+_load_generated_aliases()
 
 
 def _alias_key(raw_name: str) -> str:

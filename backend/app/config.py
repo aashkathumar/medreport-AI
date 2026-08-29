@@ -16,6 +16,17 @@ class Settings(BaseSettings):
     # in the chain until CEREBRAS_API_KEY is set. Get one from
     # https://cloud.cerebras.ai.
     cerebras_api_key: str = ""
+    # Scaffolded ahead of a key, same pattern as cerebras above. Get one
+    # from https://dashboard.cohere.com/api-keys (trial key, no card).
+    cohere_api_key: str = ""
+    # Scaffolded ahead of a key, same pattern as cerebras/cohere above.
+    # Workers AI needs BOTH a token (Account > Workers AI > Read + Edit,
+    # from dash.cloudflare.com) AND the account ID shown on that same page
+    # -- unlike the other providers, the account ID is part of the request
+    # URL, not just an auth header, so it must be set too or every call
+    # 400s before it reaches a model.
+    cloudflare_api_key: str = ""
+    cloudflare_account_id: str = ""
 
     # --- Model selection ---------------------------------------------------
     # Every default below was checked against the live provider APIs. The
@@ -65,6 +76,14 @@ class Settings(BaseSettings):
     # alternative -- still unverified by an actual generation call, since no
     # key is configured yet to test with.
     cerebras_model: str = "gpt-oss-120b"
+    # No default picked yet -- find one via live testing once
+    # COHERE_API_KEY is set.
+    cohere_model: str = ""
+    # No default picked yet -- find one via live testing once
+    # CLOUDFLARE_API_KEY/CLOUDFLARE_ACCOUNT_ID are set. Model ids on Workers
+    # AI are namespaced, e.g. "@cf/meta/llama-3.1-8b-instruct" -- not bare
+    # names like the other providers use.
+    cloudflare_model: str = ""
 
     # --- Fallback chains ---------------------------------------------------
     # CHANGED: call_with_fallback() read `settings.text_fallback_chain`, which
@@ -94,6 +113,20 @@ class Settings(BaseSettings):
     text_fallback_chain_raw: str = Field(
         default="mistral,gemini,groq_llama,nvidia,openrouter",
         validation_alias="TEXT_FALLBACK_CHAIN",
+    )
+
+    # Held back from the primary chain above and used ONLY on the Phase 2.5
+    # retry in llm_service.py, tried before the regular chain resumes as a
+    # further fallback. The point: an entry that's also open to the primary
+    # wave can get circuit-tripped or quota-exhausted by an unrelated batch
+    # before a retry ever needs it -- a reserved entry is never touched by
+    # anything but retries, so it's guaranteed fresh. Gemini fits this well:
+    # its 20/day-per-model cap makes it too small to lean on for every
+    # report's primary explanations, but that same small cap comfortably
+    # covers the rare 1-3 straggler tests a retry actually needs per report.
+    retry_reserved_chain_raw: str = Field(
+        default="gemini:gemini-3.1-flash-lite,gemini:gemini-3.6-flash,gemini:gemini-3.5-flash",
+        validation_alias="RETRY_RESERVED_CHAIN",
     )
 
     # Vision is a SEPARATE chain: groq_llama is text-only on this account (its
@@ -175,6 +208,10 @@ class Settings(BaseSettings):
     @property
     def vision_fallback_chain(self) -> List[str]:
         return self._split_chain(self.vision_fallback_chain_raw)
+
+    @property
+    def retry_reserved_chain(self) -> List[str]:
+        return self._split_chain(self.retry_reserved_chain_raw)
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -26,7 +26,10 @@ Resources:
     Properties:
       CodeUri: backend/
       Handler: app.main.handler
-      Runtime: python3.11
+      Runtime: python3.12  # see Dockerfile.aws -- python3.11's Lambda base image
+                           # runs on Amazon Linux 2, too old to install this
+                           # project's dependencies (numpy>=2.0/faiss-cpu have no
+                           # compatible wheels); 3.12 runs on Amazon Linux 2023.
       Events:
         Api:
           Type: Api

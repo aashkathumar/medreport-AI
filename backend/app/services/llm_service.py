@@ -337,21 +337,56 @@ def _references_other_test(gp_question: str, own_name: str, other_names: List[st
     return None
 
 
-# provider -> (unix time the circuit re-closes, reason). Module-level and
+# Key -> (unix time the circuit re-closes, reason). Module-level and
 # lock-guarded because batches run concurrently in a thread pool and share it.
+#
+# BUG FOUND: this used to be keyed on the bare provider name for EVERY kind
+# of failure, so one bad/slow MODEL benched every sibling model on that
+# provider for a full cooldown too. On a provider with many chain entries
+# (Cloudflare: 15, Mistral: 6, Cohere: 11+3) that took a lot of healthy
+# capacity offline over one flaky model -- the likely cause of an 85-test
+# report taking 885s instead of the usual tens of seconds. Now a key can be
+# EITHER a bare provider name (a provider-wide trip) or a full "provider:
+# model" entry (a single-model trip) -- see _is_provider_wide_failure for
+# which failures get which scope. _circuit_open checks both so a
+# provider-wide trip still blocks every model under it, matching the
+# original behaviour for the case the breaker was actually built around
+# (Mistral's documented 500-then-522 outage).
 _CIRCUIT: Dict[str, Tuple[float, str]] = {}
 _CIRCUIT_LOCK = threading.Lock()
 
 
-def _circuit_open(provider: str) -> bool:
+def _is_provider_wide_failure(reason: str) -> bool:
+    """Whether a failure reflects the PROVIDER/ACCOUNT rather than one model.
+
+    A 429 (shared account rate limit -- e.g. Groq's per-account TPM, or
+    Cohere's shared 20/min trial pool across all its models), a 5xx
+    (server-side outage), or a connection-level failure (DNS/refused -- the
+    endpoint itself is unreachable, regardless of which model was asked
+    for) genuinely affect every model on that provider, so those still
+    bench the whole provider. A plain timeout is treated as model-specific:
+    it usually means that one model was slow to respond, not that the
+    account or endpoint is down, so it should only cost that one model its
+    cooldown, not its siblings'.
+    """
+    text = (reason or "").lower()
+    return any(marker in text for marker in (
+        "429", "rate limit", "500", "502", "503", "504",
+        "connection", "nameresolutionerror", "max retries exceeded",
+    ))
+
+
+def _circuit_open(provider: str, entry: str) -> bool:
     with _CIRCUIT_LOCK:
-        entry = _CIRCUIT.get(provider)
-        if not entry:
-            return False
-        if time.time() >= entry[0]:
-            del _CIRCUIT[provider]      # cooled down; give it another chance
-            return False
-        return True
+        for key in (provider, entry):
+            tripped = _CIRCUIT.get(key)
+            if not tripped:
+                continue
+            if time.time() >= tripped[0]:
+                del _CIRCUIT[key]      # cooled down; give it another chance
+            else:
+                return True
+        return False
 
 
 _RETRY_AFTER_RE = re.compile(r"(?:try again in|retry_delay|retry in)\D{0,20}?(\d+(?:\.\d+)?)", re.I)
@@ -376,16 +411,18 @@ def _cooldown_for(reason: str) -> float:
     return settings.llm_circuit_cooldown_sec
 
 
-def _trip_circuit(provider: str, reason: str) -> None:
+def _trip_circuit(provider: str, entry: str, reason: str) -> None:
+    key = provider if _is_provider_wide_failure(reason) else entry
     until = time.time() + _cooldown_for(reason)
     with _CIRCUIT_LOCK:
-        _CIRCUIT[provider] = (until, reason)
-    print(f"Circuit opened for {provider} for {until - time.time():.0f}s: {reason[:90]}")
+        _CIRCUIT[key] = (until, reason)
+    print(f"Circuit opened for {key} for {until - time.time():.0f}s: {reason[:90]}")
 
 
-def _reset_circuit(provider: str) -> None:
+def _reset_circuit(provider: str, entry: str) -> None:
     with _CIRCUIT_LOCK:
         _CIRCUIT.pop(provider, None)
+        _CIRCUIT.pop(entry, None)
 
 
 class LLMUnavailableError(RuntimeError):
@@ -401,6 +438,7 @@ def _build_chain(
     provider: Optional[str] = None,
     model_name: Optional[str] = None,
     chain_offset: int = 0,
+    use_reserved: bool = False,
 ) -> List[str]:
     """Resolves the ordered provider chain for one request.
 
@@ -419,6 +457,14 @@ def _build_chain(
     configured providers while every batch still has the full chain as
     fallback -- no batch loses resilience, they just don't all queue behind
     the same provider at once.
+
+    use_reserved=True (retry calls only) puts settings.retry_reserved_chain
+    FIRST, ahead of the regular chain. Those entries are never touched by the
+    primary wave, so they can't have been circuit-tripped or quota-exhausted
+    by some unrelated batch before the retry gets to them -- they're
+    guaranteed fresh. The regular chain still follows as a fallback if the
+    reserve also fails, so a retry is never worse off than before this
+    existed, only potentially better.
     """
     want_vision = capability == "vision"
 
@@ -437,15 +483,18 @@ def _build_chain(
         offset = chain_offset % len(chain)
         chain = chain[offset:] + chain[:offset]
 
+    reserved = settings.retry_reserved_chain if (use_reserved and not want_vision) else []
+    ordered = reserved + chain
+
     usable, benched = [], []
-    for entry in chain:
+    for entry in ordered:
         prov = entry.split(":", 1)[0]
         if prov not in PROVIDERS or not provider_has_key(prov):
             continue
         if want_vision and not supports_vision(prov):
             # Guaranteed failure -- don't spend a network round-trip on it.
             continue
-        if _circuit_open(prov):
+        if _circuit_open(prov, entry):
             benched.append(entry)       # recently failed; skip while cooling
             continue
         usable.append(entry)
@@ -464,14 +513,26 @@ def _build_chain(
 
 
 def _ungrounded_result(test: TestResult) -> ExplainedResult:
-    """Honest placeholder for a test with no NHS/NIH grounding at all."""
+    """Honest placeholder for a test with no NHS/NIH grounding at all.
+
+    BUG FOUND (medreport_ai.pdf, "Amorphous Material"): this used to pass
+    through test.status verbatim -- whatever RangeStatus the EXTRACTOR
+    assigned before grounding was ever checked (e.g. a qualitative "Absent"
+    value defaulting to NORMAL). That produced a green "Within normal
+    range" badge sitting directly above text saying the test isn't covered
+    by NHS/NIH at all and no explanation was generated -- a genuinely
+    misleading pairing, even though the explanation text itself never
+    fabricated anything. With no grounding whatsoever, there's no basis to
+    claim normal/high/low, so this is always UNKNOWN here regardless of
+    what the extractor guessed.
+    """
     unit = (test.unit or "").strip()
     return ExplainedResult(
         test_id=test.test_id,
         raw_name=test.raw_name,
         value=test.value,
         unit=unit,
-        status=test.status,
+        status=RangeStatus.UNKNOWN,
         normal_range_min=getattr(test, "normal_range_min", None),
         normal_range_max=getattr(test, "normal_range_max", None),
         source="Not covered by NHS UK / NIH MedlinePlus",
@@ -509,6 +570,7 @@ def call_with_fallback(
     capability: Optional[str] = "text",
     timeout: Optional[float] = None,
     chain_offset: int = 0,
+    use_reserved: bool = False,
 ) -> dict:
     """Tries each provider in the capability-appropriate chain, retrying
     transient failures on the same provider before moving on.
@@ -534,7 +596,10 @@ def call_with_fallback(
     want_vision = (capability == "vision") or has_images
 
     # Raises LLMUnavailableError if nothing in the chain can serve this.
-    chain = _build_chain("vision" if want_vision else "text", provider, model_name, chain_offset)
+    chain = _build_chain(
+        "vision" if want_vision else "text", provider, model_name, chain_offset,
+        use_reserved=use_reserved,
+    )
 
     attempted: List[str] = []
     last_error: Optional[Exception] = None
@@ -546,14 +611,14 @@ def call_with_fallback(
         for attempt in range(max(1, settings.llm_max_retries)):
             try:
                 result = fn(system, prompt, max_tokens=max_tokens, model=model, timeout=timeout)
-                _reset_circuit(prov)     # healthy again
+                _reset_circuit(prov, entry)     # healthy again
                 return result
             except Exception as e:
                 last_error = e
                 is_last_attempt = attempt == max(1, settings.llm_max_retries) - 1
                 if is_last_attempt or not _is_transient(e):
                     print(f"Provider {entry} failed: {e}")
-                    _trip_circuit(prov, str(e)[:120])
+                    _trip_circuit(prov, entry, str(e)[:120])
                     break
                 backoff = settings.llm_retry_backoff_sec * (2 ** attempt)
                 print(f"Provider {entry} transient failure (attempt {attempt + 1}), "
@@ -618,6 +683,36 @@ def _allowed_numbers_for(test: TestResult) -> set:
 # test/value/unit/status/specimen signature, the same for any patient with
 # that same result), so this doesn't reopen the report-storage question from
 # earlier -- there is no patient represented in this data at all.
+# Precomputed `what_it_measures` cache -- keyed on canonical test_id ALONE,
+# not the full (test_id, value, unit, status, specimen) signature _cache_key
+# uses. Unlike what_your_result_means/lifestyle_suggestions/gp_question,
+# what_it_measures never depends on the patient's specific value -- "what is
+# hemoglobin" has one correct answer for every report that mentions HGB, so
+# it's generated ONCE per test_id (see scripts/precompute_what_it_measures.py)
+# and reused forever, instead of regenerated per report/value like the rest
+# of the exact-match cache above. Built after the RAG corpus expansion
+# (2026-08-29, 76 -> 408 test_ids) made this worth doing for a genuinely
+# large, stable set of tests.
+_WIM_CACHE_FILE = Path(__file__).resolve().parent.parent.parent.parent / "local_data" / "what_it_measures_cache.json"
+_WIM_CACHE: Dict[str, str] = {}
+
+
+def _wim_load() -> None:
+    if not _WIM_CACHE_FILE.exists():
+        return
+    try:
+        _WIM_CACHE.update(json.loads(_WIM_CACHE_FILE.read_text()))
+    except Exception as e:
+        print(f"Could not load what_it_measures cache from {_WIM_CACHE_FILE}: {e}")
+
+
+def _wim_get(test_id: str) -> Optional[str]:
+    return _WIM_CACHE.get(test_id)
+
+
+_wim_load()
+
+
 _CACHE_FILE = Path(__file__).resolve().parent.parent.parent.parent / "local_data" / "explanation_cache.json"
 _EXPLANATION_CACHE: Dict[tuple, dict] = {}
 _CACHE_LOCK = threading.Lock()
@@ -683,6 +778,7 @@ def _explain_batch(
     provider: Optional[str],
     model_name: Optional[str],
     chain_offset: int = 0,
+    use_reserved: bool = False,
 ) -> Dict[str, dict]:
     """Issues at most ONE LLM call for one batch and returns test_id -> explanation.
 
@@ -705,16 +801,30 @@ def _explain_batch(
     if not to_call:
         return results
 
+    # what_it_measures never depends on the patient's specific value, so
+    # any test_id already in the precomputed cache (see _wim_get /
+    # scripts/precompute_what_it_measures.py) doesn't need the LLM to write
+    # it at all -- the prompt tells it to skip that field for these tests
+    # (smaller output, one fewer thing that can go wrong per test), and the
+    # cached text is force-set onto the response afterward regardless of
+    # what the model did or didn't produce for it.
+    precomputed: Dict[str, str] = {}
     tests_summary = []
     for test, grounding in to_call:
         status_val = test.status.value if hasattr(test.status, "value") else str(test.status)
         min_val = getattr(test, "normal_range_min", None)
         max_val = getattr(test, "normal_range_max", None)
         range_str = f"{min_val}-{max_val}" if (min_val is not None or max_val is not None) else "standard"
+        wim = _wim_get(test.test_id)
+        note = ""
+        if wim:
+            precomputed[test.test_id] = wim
+            note = ('\n  NOTE: what_it_measures for this test is already known -- '
+                    'set it to "" in your response for this test_id, do not write it.')
         tests_summary.append(
             f"- Test ID: {test.test_id} | Name: {test.raw_name} | Value: {test.value} {test.unit} | "
             f"Range: {range_str} {test.unit} | Status: {status_val}\n"
-            f"  Reference context: {grounding['text']}"
+            f"  Reference context: {grounding['text']}{note}"
         )
 
     joined = "\n".join(tests_summary)
@@ -741,12 +851,20 @@ Return valid JSON:
         data = call_with_fallback(
             system=SYSTEM, prompt=prompt, max_tokens=3000,
             provider=provider, model_name=model_name, capability="text",
-            chain_offset=chain_offset,
+            chain_offset=chain_offset, use_reserved=use_reserved,
         )
         raw = data.get("explanations", []) if isinstance(data, dict) else []
         for item in raw:
             if isinstance(item, dict):
-                results[item.get("test_id", "")] = item
+                tid = item.get("test_id", "")
+                if tid in precomputed:
+                    # Force-set regardless of what the model returned for
+                    # this field -- it was told to leave it blank, but
+                    # trusting that over just overwriting it would mean one
+                    # non-compliant model call away from silently losing the
+                    # field, or a model writing something ungrounded here.
+                    item["what_it_measures"] = precomputed[tid]
+                results[tid] = item
     except Exception as e:
         print(f"Explanation batch failed across all providers: {e}")
     return results  # cache hits survive even if the network call itself failed
@@ -843,8 +961,46 @@ def explain_all_test_results_batched(
         retry_workers = max(1, min(settings.llm_max_concurrency, len(retry_batches)))
         with ThreadPoolExecutor(max_workers=retry_workers) as pool:
             futures = {
-                pool.submit(_explain_batch, batch, profile, provider, model_name, len(batches) + i): batch
+                pool.submit(
+                    _explain_batch, batch, profile, provider, model_name, len(batches) + i,
+                    use_reserved=True,
+                ): batch
                 for i, batch in enumerate(retry_batches)
+            }
+            for future in as_completed(futures):
+                retry_results.update(future.result())
+
+    # --- Phase 2.75: one more bounded retry for whatever is STILL missing ---
+    # Phase 2.5 already retries against the reserve chain + primary chain,
+    # but if a test is STILL unexplained after that, the only lever left is
+    # time -- a circuit-tripped provider only reopens after
+    # settings.llm_circuit_cooldown_sec, so a batch retried immediately
+    # after Phase 2.5 would hit the exact same still-open circuits it just
+    # failed against. Rather than give up at that point and show "not
+    # independently verified" while capacity that will be available again
+    # in under a minute sits idle, this waits out the cooldown and tries
+    # once more. Bounded to ONE extra pass, so a genuinely dead chain still
+    # terminates rather than retrying forever.
+    #
+    # Reserve chain NOT reused here (use_reserved defaults to False) -- it
+    # already had its one shot in Phase 2.5. Hammering it a second time
+    # burns through its deliberately small, some-of-it-daily-capped entries
+    # (Gemini, Cloudflare) for no real benefit over giving the primary
+    # chain's 52 entries a second chance once their cooldowns have cleared.
+    still_missing = [(test, grounding) for test, grounding in missing if test.test_id not in retry_results]
+    if still_missing:
+        print(f"{len(still_missing)} test(s) still missing after the first retry -- "
+              f"waiting {settings.llm_circuit_cooldown_sec:.0f}s for circuit cooldowns "
+              f"to clear before one final attempt.")
+        time.sleep(settings.llm_circuit_cooldown_sec)
+        final_batches = [still_missing[i:i + EXPLAIN_BATCH_SIZE] for i in range(0, len(still_missing), EXPLAIN_BATCH_SIZE)]
+        final_workers = max(1, min(settings.llm_max_concurrency, len(final_batches)))
+        with ThreadPoolExecutor(max_workers=final_workers) as pool:
+            futures = {
+                pool.submit(
+                    _explain_batch, batch, profile, provider, model_name, len(batches) + i,
+                ): batch
+                for i, batch in enumerate(final_batches)
             }
             for future in as_completed(futures):
                 retry_results.update(future.result())
@@ -871,17 +1027,32 @@ def explain_all_test_results_batched(
                 grounding["text"],
                 allowed_numbers=_allowed_numbers_for(test),
             )
-            if ok:
-                other_names = [t.raw_name for t, _ in batches[batch_index] if t.test_id != test.test_id]
-                contaminated = _references_other_test(details.get("gp_question", ""), test.raw_name, other_names)
-                if contaminated:
-                    ok = False
-                    reason = f"gp_question references a different test in this batch: {contaminated}"
             if not ok:
+                # An ungrounded fact could be anywhere in the text (a wrong
+                # threshold, an invented figure) -- can't trust any of it,
+                # so the whole explanation is discarded.
                 print(f"Rejected ungrounded explanation for {test.test_id}: {reason}")
                 details = {}
             else:
-                # Only ever cache a result that passed BOTH checks above --
+                other_names = [t.raw_name for t, _ in batches[batch_index] if t.test_id != test.test_id]
+                contaminated = _references_other_test(details.get("gp_question", ""), test.raw_name, other_names)
+                if contaminated:
+                    # BUG FOUND: this used to discard the WHOLE explanation
+                    # over a bad gp_question alone, even though
+                    # what_it_measures/what_your_result_means/
+                    # lifestyle_suggestions had already passed the grounding
+                    # check above and were perfectly fine -- one contaminated
+                    # sentence demoted a good explanation to the generic
+                    # "please discuss with your GP" fallback. Only
+                    # gp_question is untrustworthy here (it names a sibling
+                    # test from the same batch), so only it needs replacing --
+                    # with the schema's own safe default question, kept in
+                    # sync by reading it directly rather than duplicating the
+                    # string.
+                    print(f"Replaced contaminated gp_question for {test.test_id}: "
+                          f"referenced {contaminated} instead of {test.raw_name}")
+                    details["gp_question"] = ExplainedResult.model_fields["gp_question"].default
+                # Only ever cache a result that passed the grounding check --
                 # the cache must never be able to serve an explanation that
                 # would have been rejected.
                 _cache_put(test, details)
@@ -915,7 +1086,16 @@ def explain_all_test_results_batched(
                 raw_name=test.raw_name,
                 value=test.value,
                 unit=unit_display,
-                status=test.status,
+                # BUG FOUND (medreport_ai-2.pdf, ESR): same class of bug as
+                # _ungrounded_result -- test.status is whatever the
+                # EXTRACTOR guessed before this test's explanation was ever
+                # verified, so a degraded/canned-fallback result (no real
+                # explanation, "Not independently verified") could still
+                # show a green "Within normal range" badge. No verified
+                # basis to claim normal/high/low without real generated
+                # (and grounding-checked) content, so this is UNKNOWN
+                # whenever `details` is empty, same as the ungrounded case.
+                status=test.status if details else RangeStatus.UNKNOWN,
                 normal_range_min=getattr(test, "normal_range_min", None),
                 normal_range_max=getattr(test, "normal_range_max", None),
                 source=source_label,

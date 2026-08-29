@@ -14,6 +14,7 @@ from app.services.llm_providers import (
     provider_status,
 )
 from app.services.rag_service import index_health
+from app.services.reference_db import resolve_test_id, canonicalize_test_name, finalize_result
 import uuid
 
 router = APIRouter()
@@ -170,6 +171,80 @@ def _process_upload(
         "summary_degraded": summary_degraded,
         **summary,
     }
+
+@router.post("/explain-manual")
+async def explain_manual(data: dict):
+    """Explains manually-typed test values (the frontend's "Manual Entry"
+    fallback, used when PDF extraction fails or a patient just wants to
+    type one value in). Previously this had NO backend counterpart at
+    all -- the frontend collected entries into session_state and had
+    nothing to send them to. Mirrors /upload-pdf's pipeline from the point
+    just after parsing: same test_id/range resolution, same batched
+    explanation call, same response shape.
+    """
+    raw_results = data.get("results", [])
+    if not raw_results:
+        raise HTTPException(422, "No test values provided.")
+
+    return await run_in_threadpool(
+        _process_manual,
+        raw_results,
+        data.get("user_id", "demo_user"),
+        data.get("age", 30),
+        data.get("sex", "unknown"),
+        data.get("diet_type", "omnivore"),
+        data.get("provider"),
+        data.get("model_name"),
+    )
+
+
+def _process_manual(raw_results, user_id, age, sex, diet_type, provider, model_name):
+    profile = UserProfile(user_id=user_id, age=age, sex=sex, diet_type=diet_type)
+
+    # Same resolution path pdf_parser.py uses for extracted rows, so a
+    # manually-typed "Haemoglobin" gets the identical canonical id and
+    # normal-range lookup a PDF-extracted "Haemoglobin" would -- no reason
+    # for the two entry paths to disagree on what a test name means.
+    test_results = []
+    for r in raw_results:
+        raw_name = (r.get("raw_name") or "").strip()
+        if not raw_name:
+            continue
+        test_id = resolve_test_id(raw_name) or canonicalize_test_name(raw_name)
+        finalized = finalize_result(
+            {"test_id": test_id, "value": r.get("value"), "unit": r.get("unit", ""),
+             "ref_range": None, "status": None},
+            patient_sex=sex, patient_age=age,
+        )
+        test_results.append(TestResult(
+            test_id=finalized["test_id"],
+            raw_name=raw_name,
+            value=finalized["value"],
+            unit=finalized.get("unit", ""),
+            status=RangeStatus(finalized["status"]) if finalized.get("status") else RangeStatus.UNKNOWN,
+            normal_range_min=finalized.get("normal_range_min"),
+            normal_range_max=finalized.get("normal_range_max"),
+        ))
+
+    if not test_results:
+        raise HTTPException(422, "No valid test values provided.")
+
+    explained, degraded_test_ids, ungrounded_test_ids = explain_all_test_results_batched(
+        test_results, profile, provider=provider, model_name=model_name
+    )
+    summary = generate_summary(explained, profile, provider=provider, model_name=model_name)
+    summary_degraded = bool(summary.pop("summary_degraded", False))
+
+    return {
+        "report_id": str(uuid.uuid4()),
+        "parse_method": "manual",
+        "explained_results": [r.model_dump() for r in explained],
+        "degraded_test_ids": degraded_test_ids,
+        "ungrounded_test_ids": ungrounded_test_ids,
+        "summary_degraded": summary_degraded,
+        **summary,
+    }
+
 
 @router.get("/health")
 async def health():
