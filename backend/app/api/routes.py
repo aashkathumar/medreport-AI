@@ -261,28 +261,20 @@ async def download_pdf(data: dict):
         raw_explained = data.get("explained_results", [])
         
         # 1. Reconstruct Pydantic models from dicts cleanly
+        # ETHICS CONSTRAINT (Chris Clarke): status/normal_range_min/max/
+        # what_your_result_means no longer exist on ExplainedResult on this
+        # branch (see schemas.py) -- dropped here to match.
         explained_results = []
         for item in raw_explained:
             if isinstance(item, dict):
-                # Ensure status is converted to a valid RangeStatus enum instance
-                raw_status = item.get("status", "unknown")
-                try:
-                    status_enum = RangeStatus(raw_status)
-                except ValueError:
-                    status_enum = RangeStatus.UNKNOWN
-
                 explained_results.append(ExplainedResult(
                     test_id=item.get("test_id", "UNKNOWN"),
                     raw_name=item.get("raw_name", "Test"),
                     value=item.get("value", "N/A"),
                     unit=item.get("unit", ""),
-                    status=status_enum,
-                    normal_range_min=item.get("normal_range_min"),
-                    normal_range_max=item.get("normal_range_max"),
                     source=item.get("source", "NHS UK / Medical Consensus"),
                     source_urls=item.get("source_urls", []) or [],
                     what_it_measures=item.get("what_it_measures", ""),
-                    what_your_result_means=item.get("what_your_result_means", ""),
                     lifestyle_suggestions=item.get("lifestyle_suggestions", []),
                     gp_question=item.get("gp_question", ""),
                     disclaimer=item.get("disclaimer", "")

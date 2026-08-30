@@ -7,29 +7,10 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 )
 from reportlab.lib.units import cm
-from app.models.schemas import ExplainedResult, RangeStatus
+from app.models.schemas import ExplainedResult
 
 BLUE = HexColor("#003E74")
-GREEN = HexColor("#2E8B57")
-AMBER = HexColor("#FFA500")
-RED = HexColor("#B22222")
 LGREY = HexColor("#F5F5F5")
-# Distinct from LGREY (the banner background) -- using LGREY for both meant
-# UNKNOWN-status text was rendered in the same colour as its own background
-# and was completely invisible (e.g. CHOL/HDL Ratio, LDL/HDL Ratio, any
-# computed value with no standard reference range).
-DGREY = HexColor("#888888")
-
-STATUS_COLOUR = {
-    RangeStatus.NORMAL: GREEN, RangeStatus.LOW: RED,
-    RangeStatus.HIGH: AMBER, RangeStatus.UNKNOWN: DGREY,
-}
-STATUS_LABEL = {
-    RangeStatus.NORMAL: "Within normal range",
-    RangeStatus.LOW: "Below normal range",
-    RangeStatus.HIGH: "Above normal range",
-    RangeStatus.UNKNOWN: "Range unknown",
-}
 
 # LLM output occasionally contains Unicode dash/hyphen variants (most often
 # U+2011 NON-BREAKING HYPHEN, e.g. "iron‑rich") that have no glyph in
@@ -102,28 +83,25 @@ def generate_report_pdf(
     story.append(HRFlowable(width="100%", thickness=0.5, color=LGREY, spaceAfter=6))
     story.append(Paragraph("Your Results -- Explained", head_s))
 
+    # ETHICS CONSTRAINT (Chris Clarke): no status/range on ExplainedResult
+    # here (see schemas.py) -- the banner shows the raw extracted value only
+    # (what was on the report), never a normal/high/low judgement about it.
     for r in explained_results:
-        col = STATUS_COLOUR[r.status]
-        label = STATUS_LABEL[r.status]
         banner = Table(
             [[
                 Paragraph(f"<b>{_sanitize(r.raw_name)}</b>", body_s),
-                Paragraph(
-                    f"<b>{r.value} {r.unit}</b> &nbsp; {label}",
-                    ParagraphStyle("BL", parent=body_s, textColor=col),
-                ),
+                Paragraph(f"<b>{r.value} {r.unit}</b>", body_s),
             ]],
             colWidths=["50%", "50%"],
         )
         banner.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), LGREY),
             ("ROWPADDING", (0, 0), (-1, -1), 6),
-            ("LINEBELOW", (0, 0), (-1, -1), 1.5, col),
+            ("LINEBELOW", (0, 0), (-1, -1), 1.5, BLUE),
         ]))
         story += [
             banner, Spacer(1, 4),
             Paragraph(_sanitize(r.what_it_measures), body_s),
-            Paragraph(f"<b>Your result:</b> {_sanitize(r.what_your_result_means)}", body_s),
         ]
         if r.lifestyle_suggestions:
             story.append(Paragraph("<b>Lifestyle suggestions:</b>", body_s))

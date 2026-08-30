@@ -17,17 +17,22 @@ from app.services.llm_providers import (
 from app.services.rag_service import retrieve_context
 from app.services.reference_db import get_reference_data, grounding_test_id
 
-SYSTEM = """You are an expert health literacy assistant helping patients understand laboratory test results based on NHS UK and NIH MedlinePlus standards.
+# ETHICS CONSTRAINT (Chris Clarke): this branch never asks the model to
+# interpret the patient's specific value/status against a reference range --
+# that's the exact "clinical decision support" framing he flagged. Every
+# field asked for here is deliberately GENERAL to the test itself, not tied
+# to whether this particular patient's number is high, low, or normal.
+SYSTEM = """You are an expert health literacy assistant helping patients understand what their laboratory tests are and how to support their health, based on NHS UK and NIH MedlinePlus standards.
 
-For each test:
+For each test, write GENERAL, test-level guidance -- never referencing the patient's own specific value, whether it is high/low/normal, or any reference range:
 1. what_it_measures: Explain clearly what the biomarker does in the body.
-2. what_your_result_means: Explain what the patient's specific value and status (normal, high, or low) indicate relative to reference ranges (e.g., elevated HbA1c reflects high blood sugar). Always conclude this section with a gentle reminder to review findings with their GP.
-3. lifestyle_suggestions: Provide 2-3 evidence-based dietary, hydration, or activity adjustments grounded in NHS/NIH guidance.
-4. gp_question: Formulate a constructive question for their doctor.
+2. lifestyle_suggestions: Provide 2-3 evidence-based dietary, hydration, or activity habits that generally support keeping this measurement in a healthy range, grounded in NHS/NIH guidance -- phrased as good general practice for anyone, not as a response to this patient's result.
+3. gp_question: Formulate a general, constructive question a patient could ask their GP about this test.
 
 STRICT RULES:
+- Do NOT mention, infer, or imply the patient's own value, or whether it is elevated, low, normal, or abnormal, anywhere in your answer. This tool never states what a specific result means -- only what the test is and how to generally support that measurement.
 - Base every explanation ONLY on the facts given in that test's own "Reference context" line. Do NOT pull in facts, causes, or figures that belong to a different test in this batch, even if they seem related.
-- Do NOT introduce any medical fact, cause, condition, or figure that is not present in the reference context for that specific test. If the context does not cover something, omit it rather than inferring or guessing.
+- Do NOT introduce any medical fact, cause, condition, figure, or reference range that is not present in the reference context for that specific test. If the context does not cover something, omit it rather than inferring or guessing.
 - Write in your own words - paraphrase the reference context, do not copy its sentences verbatim.
 - Never diagnose, prescribe, or make clinical recommendations beyond general lifestyle guidance.
 
@@ -39,7 +44,6 @@ RAG_PASSAGE_CHARS = 550
 
 
 def _build_grounding(test: TestResult) -> Dict[str, Any]:
-    status = test.status.value if hasattr(test.status, "value") else str(test.status)
     blocks: List[str] = []
     sources: List[Dict[str, str]] = []
     source_labels: List[str] = []
@@ -58,12 +62,12 @@ def _build_grounding(test: TestResult) -> Dict[str, Any]:
 
     ref = get_reference_data(resolved_id)
     if ref:
-        curated = [ref.get("plain_english", "")]
-        if status == "low" and ref.get("low_means"):
-            curated.append(f"Low range context: {ref['low_means']}")
-        elif status == "high" and ref.get("high_means"):
-            curated.append(f"High range context: {ref['high_means']}")
-        curated_text = " ".join(p for p in curated if p)
+        # ETHICS CONSTRAINT (Chris Clarke): the low_means/high_means curated
+        # blocks exist to explain a LOW or HIGH result specifically -- exactly
+        # the per-status clinical interpretation this branch must not
+        # produce. Only the general plain_english description is used here,
+        # regardless of this test's actual status.
+        curated_text = ref.get("plain_english", "")
         if curated_text:
             label = ref.get("source", "NHS UK / NIH MedlinePlus")
             blocks.append(f"({label}) {curated_text}")
@@ -132,7 +136,7 @@ def _coerce_details(details: dict) -> dict:
 
     clean: Dict[str, Any] = {}
 
-    for key in ("what_it_measures", "what_your_result_means", "gp_question", "disclaimer"):
+    for key in ("what_it_measures", "gp_question", "disclaimer"):
         value = details.get(key)
         if isinstance(value, str) and value.strip():
             clean[key] = value.strip()
@@ -515,33 +519,22 @@ def _build_chain(
 def _ungrounded_result(test: TestResult) -> ExplainedResult:
     """Honest placeholder for a test with no NHS/NIH grounding at all.
 
-    BUG FOUND (medreport_ai.pdf, "Amorphous Material"): this used to pass
-    through test.status verbatim -- whatever RangeStatus the EXTRACTOR
-    assigned before grounding was ever checked (e.g. a qualitative "Absent"
-    value defaulting to NORMAL). That produced a green "Within normal
-    range" badge sitting directly above text saying the test isn't covered
-    by NHS/NIH at all and no explanation was generated -- a genuinely
-    misleading pairing, even though the explanation text itself never
-    fabricated anything. With no grounding whatsoever, there's no basis to
-    claim normal/high/low, so this is always UNKNOWN here regardless of
-    what the extractor guessed.
+    ETHICS CONSTRAINT (Chris Clarke): no status/range fields exist on
+    ExplainedResult on this branch (see schemas.py), and the fallback text
+    below deliberately never references the patient's own value or status --
+    it only says the test isn't covered, same as it would for any patient.
     """
-    unit = (test.unit or "").strip()
     return ExplainedResult(
         test_id=test.test_id,
         raw_name=test.raw_name,
         value=test.value,
-        unit=unit,
-        status=RangeStatus.UNKNOWN,
-        normal_range_min=getattr(test, "normal_range_min", None),
-        normal_range_max=getattr(test, "normal_range_max", None),
+        unit=(test.unit or "").strip(),
         source="Not covered by NHS UK / NIH MedlinePlus",
         source_urls=[],
         what_it_measures=f"NHS UK and NIH MedlinePlus reference material for {test.raw_name} was not available, so no explanation has been generated.",
-        what_your_result_means=f"Your result is {test.value} {unit}. This tool only reports what NHS UK and NIH MedlinePlus sources state, and they do not cover this test, so please discuss this result with your GP.",
-        lifestyle_suggestions=["Discuss this specific result with your GP or healthcare provider.",
+        lifestyle_suggestions=["Discuss this test with your GP or healthcare provider.",
                                "Avoid making dietary or medication changes without professional advice."],
-        gp_question=f"Could you explain what my {test.raw_name} result means?",
+        gp_question=f"Could you explain what my {test.raw_name} test involves?",
         disclaimer="Educational information only. Consult your GP.",
     )
 
@@ -641,7 +634,6 @@ def _patient_facing_text(details: Dict[str, Any]) -> str:
     """
     parts = [
         details.get("what_it_measures", ""),
-        details.get("what_your_result_means", ""),
         " ".join(details.get("lifestyle_suggestions", []) or []),
         details.get("gp_question", ""),
     ]
@@ -650,22 +642,19 @@ def _patient_facing_text(details: Dict[str, Any]) -> str:
 
 def _allowed_numbers_for(test: TestResult) -> set:
     """Figures an explanation may legitimately cite without them appearing in
-    the reference text: the patient's own result, their reference bounds, and
-    any digits belonging to the unit string.
+    the reference text: digits belonging to the unit string only.
 
-    The unit matters -- "10^9/L" parses as the two quantities 10 and 9, so
-    without seeding them a perfectly grounded platelet or WBC explanation gets
-    rejected for citing "unsourced figures".
+    ETHICS CONSTRAINT (Chris Clarke): unlike feature/developv4.1, the
+    patient's own value and reference bounds are deliberately NOT allowed
+    here -- this branch's output must never cite this patient's specific
+    number or range at all, so if the model does anyway, the verifier below
+    should catch and reject it rather than have this list quietly permit it.
+
+    The unit still matters -- "10^9/L" parses as the two quantities 10 and 9,
+    so without seeding them a perfectly grounded platelet or WBC explanation
+    gets rejected for citing "unsourced figures".
     """
-    allowed = set()
-    for value in (test.value, getattr(test, "normal_range_min", None),
-                  getattr(test, "normal_range_max", None)):
-        try:
-            allowed.add(float(str(value).replace(",", "")))
-        except (TypeError, ValueError):
-            continue
-    allowed |= _numbers_in(test.unit or "")
-    return allowed
+    return _numbers_in(test.unit or "")
 
 
 # Cache of VERIFIED explanations (written only after a result passes
@@ -747,31 +736,28 @@ _cache_load()
 
 
 def _cache_key(test: TestResult) -> tuple:
-    """Exact-match signature. Deliberately includes the literal value, not
-    just status -- what_your_result_means quotes the specific number, so a
-    coarser (test_id, status) key could surface one patient's text quoting a
-    different patient's figure. Two results only ever share a cache entry if
-    every one of these fields is identical.
+    """Exact-match signature.
 
-    BUG FOUND (2026-08-29): normal_range_min/max were NOT part of this key,
-    but normal ranges vary by patient sex/age (get_normal_range), and Phase
-    3's grounding re-verification treats a result's OWN range bounds as
-    legitimately citable numbers (_allowed_numbers_for). A cached
-    explanation written for one patient's range (e.g. a male-specific HGB
-    range citing "13.5") got served to a different patient with a different
-    computed range (e.g. the sex-unspecified default citing "11.5") --
-    correctly cached, correctly grounded when it was written, but rejected
-    as "unsourced" on reuse because the SERVING patient's allowed-numbers
-    list didn't include the ORIGINAL patient's bounds. Including the range
-    in the key means two results only share a cache entry if their
-    reference bounds match too, so this can't happen.
+    ETHICS CONSTRAINT (Chris Clarke) SIMPLIFICATION: on feature/developv4.1,
+    this key included the literal value/status/range, because the generated
+    text quoted the patient's specific figure and cited their own reference
+    bounds -- two patients with different values genuinely needed different
+    cached text. On this branch, generation is deliberately GENERAL to the
+    test (never references the patient's value, status, or range at all -- see
+    SYSTEM prompt / _allowed_numbers_for), so every patient with the same
+    test_id and specimen gets identical, correctly-grounded text. Keying on
+    test_id/specimen alone (like the what_it_measures precompute cache)
+    means this now behaves as a per-test cache, not a per-result one --
+    far higher hit rate, since it no longer misses on a value that's never
+    been seen at that exact number before.
+
+    specimen stays in the key: the same test_id can resolve to different
+    reference material depending on specimen (e.g. urinary vs blood
+    glucose both alias to GLUCOSE -- see the grounding_test_id redirect in
+    _build_grounding), so collapsing specimen away would let one specimen's
+    cached text leak into the other's results.
     """
-    status_val = test.status.value if hasattr(test.status, "value") else str(test.status)
-    return (
-        test.test_id, str(test.value), (test.unit or "").strip(),
-        status_val, getattr(test, "specimen", None),
-        getattr(test, "normal_range_min", None), getattr(test, "normal_range_max", None),
-    )
+    return (test.test_id, getattr(test, "specimen", None))
 
 
 def _cache_get(test: TestResult) -> Optional[dict]:
@@ -825,10 +811,11 @@ def _explain_batch(
     precomputed: Dict[str, str] = {}
     tests_summary = []
     for test, grounding in to_call:
-        status_val = test.status.value if hasattr(test.status, "value") else str(test.status)
-        min_val = getattr(test, "normal_range_min", None)
-        max_val = getattr(test, "normal_range_max", None)
-        range_str = f"{min_val}-{max_val}" if (min_val is not None or max_val is not None) else "standard"
+        # ETHICS CONSTRAINT (Chris Clarke): unlike feature/developv4.1, the
+        # patient's value/status/reference-range are deliberately NOT put in
+        # front of the model at all here -- not just "instructed not to use
+        # them," genuinely absent from the prompt, so there's nothing
+        # specific-to-this-patient for it to reference even by accident.
         wim = _wim_get(test.test_id)
         note = ""
         if wim:
@@ -836,13 +823,12 @@ def _explain_batch(
             note = ('\n  NOTE: what_it_measures for this test is already known -- '
                     'set it to "" in your response for this test_id, do not write it.')
         tests_summary.append(
-            f"- Test ID: {test.test_id} | Name: {test.raw_name} | Value: {test.value} {test.unit} | "
-            f"Range: {range_str} {test.unit} | Status: {status_val}\n"
+            f"- Test ID: {test.test_id} | Name: {test.raw_name}\n"
             f"  Reference context: {grounding['text']}{note}"
         )
 
     joined = "\n".join(tests_summary)
-    prompt = f"""Patient: {profile.age}yo {profile.sex}, {profile.diet_type} diet.
+    prompt = f"""Diet: {profile.diet_type}.
 
 Tests to explain:
 {joined}
@@ -853,9 +839,8 @@ Return valid JSON:
     {{
       "test_id": "TEST_ID_HERE",
       "what_it_measures": "2-3 sentences explaining biomarker function.",
-      "what_your_result_means": "2-3 sentences explaining this specific value, concluding with a reminder to review with GP.",
-      "lifestyle_suggestions": ["Actionable diet/lifestyle advice 1", "Actionable advice 2"],
-      "gp_question": "Focused question for doctor.",
+      "lifestyle_suggestions": ["General diet/lifestyle habit 1 that supports this measurement", "General habit 2"],
+      "gp_question": "General question a patient could ask their doctor about this test.",
       "disclaimer": "Educational information only. Consult your GP."
     }}
   ]
@@ -1080,7 +1065,6 @@ def explain_all_test_results_batched(
             degraded.append(test.test_id)
 
         unit_display = (test.unit or "").strip()
-        result_str = f"{test.value} {unit_display}".strip()
 
         # BUG FOUND (Sterling Accuris report, Nitrite): source/source_urls
         # were always taken from `grounding`, regardless of whether the
@@ -1094,30 +1078,22 @@ def explain_all_test_results_batched(
         source_label = grounding["source_label"] if details else "Not independently verified"
         source_urls = [s["url"] for s in grounding["sources"]] if details else []
 
+        # ETHICS CONSTRAINT (Chris Clarke): no status/normal_range fields on
+        # ExplainedResult here at all (see schemas.py) -- unlike
+        # feature/developv4.1, there is no "flag this UNKNOWN when
+        # ungrounded/degraded" step needed, because there was never a
+        # normal/high/low claim being made in the first place.
         all_explained.append(
             ExplainedResult(
                 test_id=test.test_id,
                 raw_name=test.raw_name,
                 value=test.value,
                 unit=unit_display,
-                # BUG FOUND (medreport_ai-2.pdf, ESR): same class of bug as
-                # _ungrounded_result -- test.status is whatever the
-                # EXTRACTOR guessed before this test's explanation was ever
-                # verified, so a degraded/canned-fallback result (no real
-                # explanation, "Not independently verified") could still
-                # show a green "Within normal range" badge. No verified
-                # basis to claim normal/high/low without real generated
-                # (and grounding-checked) content, so this is UNKNOWN
-                # whenever `details` is empty, same as the ungrounded case.
-                status=test.status if details else RangeStatus.UNKNOWN,
-                normal_range_min=getattr(test, "normal_range_min", None),
-                normal_range_max=getattr(test, "normal_range_max", None),
                 source=source_label,
                 source_urls=source_urls,
-                what_it_measures=details.get("what_it_measures", f"Evaluates {test.raw_name} levels in the body."),
-                what_your_result_means=details.get("what_your_result_means", f"Your result is {result_str}. Please review this value with your GP."),
+                what_it_measures=details.get("what_it_measures", f"Evaluates what {test.raw_name} measures in the body."),
                 lifestyle_suggestions=details.get("lifestyle_suggestions", ["Maintain balanced nutrition and regular physical activity."]),
-                gp_question=details.get("gp_question", f"What does my {test.raw_name} result mean for my overall health?"),
+                gp_question=details.get("gp_question", f"Could you explain what my {test.raw_name} test involves?"),
                 disclaimer=details.get("disclaimer", "Educational information only. Consult your GP."),
             )
         )
@@ -1131,91 +1107,37 @@ def generate_summary(
     provider: str = None,
     model_name: str = None,
 ) -> dict:
-    abnormal = [r for r in explained_results if r.status in (RangeStatus.HIGH, RangeStatus.LOW)]
-    abnormal_line = ", ".join(f"{a.raw_name} ({a.value} {a.unit} - {a.status.value})" for a in abnormal) if abnormal else "All results normal"
+    """ETHICS CONSTRAINT (Chris Clarke) REWRITE: feature/developv4.1's
+    version built this summary around "Abnormal" results (status HIGH/LOW,
+    with each test's specific value quoted) -- exactly the per-result
+    clinical interpretation this branch must not produce, and
+    ExplainedResult no longer even carries a status/value-vs-range concept
+    to build that list from (see schemas.py).
 
-    summary_prompt = f"""Patient: {profile.age}yo {profile.sex}.
-Tests: {len(explained_results)}
-Abnormal: {abnormal_line}
-
-Return valid JSON:
-{{
-  "overall_summary": "A concise 3-sentence plain English summary of the main lab findings.",
-  "top_gp_topics": ["Specific discussion point 1", "Specific discussion point 2"],
-  "top_lifestyle_change": "One primary actionable lifestyle or dietary suggestion based on results.",
-  "closing_message": "A supportive closing sentence reiterating clinical follow-up."
-}}"""
-
-    # BUG FOUND: with no constraint on this, the summary previously wrote
-    # "low HDL (Hb A)" - HDL was actually normal, and "Hb A" is an unrelated
-    # hemoglobin-electrophoresis test that happened to also be flagged low.
-    # The two got merged into one false claim. Each item in "Abnormal" above
-    # is already exactly "name (value unit - status)" - the model must not
-    # combine, rename, or attach one test's name/status to another.
-    # CHANGED: this prompt carried the anti-conflation rule but NOT the
-    # anti-diagnosis rule that the per-test SYSTEM prompt has. The summary was
-    # therefore free to write "hyperglycemia", "dyslipidemia" and "renal
-    # function concerns" -- diagnostic language this tool must not produce,
-    # and in the last case simply wrong (urea and BUN were LOW, which is not a
-    # renal concern). Both rules now apply in both places.
-    summary_system = (
-        "You are a clinical report summarizer. Every abnormal test is listed "
-        "individually in the \"Abnormal\" line as \"name (value unit - status)\". "
-        "Refer to each test only by its own listed name and status - never combine "
-        "two different tests into one claim, and never describe a test as high/low "
-        "unless it is explicitly listed as abnormal. "
-        "Never diagnose, name a disease or condition, or use clinical shorthand "
-        "such as 'hyperglycemia', 'dyslipidemia', 'anaemia' or 'deficiency'. "
-        "Describe only what the listed results show, in plain English, and direct "
-        "the patient to their GP for interpretation. "
-        "Do not state any number that does not appear in the data above. "
-        "Return JSON."
-    )
-
-    # Every figure the summary is allowed to cite: the patient's own results
-    # and reference bounds, plus the test count and their age (both stated in
-    # the prompt). Anything else is invented.
-    allowed = {float(len(explained_results))}
-    try:
-        allowed.add(float(profile.age))
-    except (TypeError, ValueError):
-        pass
-    for r in explained_results:
-        for value in (r.value, r.normal_range_min, r.normal_range_max):
-            try:
-                allowed.add(float(str(value).replace(",", "")))
-            except (TypeError, ValueError):
-                continue
-        allowed |= _numbers_in(r.unit or "")
-
-    try:
-        res = call_with_fallback(system=summary_system, prompt=summary_prompt, max_tokens=1500,
-                                 provider=provider, model_name=model_name, capability="text")
-        if isinstance(res, dict) and res.get("overall_summary"):
-            # CHANGED: the summary was the ONE patient-facing surface with no
-            # grounding check at all -- and it is the first thing the patient
-            # reads. Same rule as the per-test explanations: a figure that is
-            # not in the data is not shown.
-            blob = " ".join(str(res.get(k, "")) if not isinstance(res.get(k), list)
-                            else " ".join(map(str, res.get(k) or []))
-                            for k in ("overall_summary", "top_gp_topics",
-                                      "top_lifestyle_change", "closing_message"))
-            ok, reason = _verify_grounded(blob, abnormal_line, allowed_numbers=allowed)
-            if not ok:
-                print(f"Rejected ungrounded summary: {reason}")
-                raise ValueError(reason)
-            res["summary_degraded"] = False
-            return res
-    except Exception as e:
-        print(f"Summary generation failed across all providers: {e}")
-
-    # CHANGED: routes.py pops "summary_degraded" off this dict, but nothing
-    # ever set it -- so a fully canned summary was reported to the UI as a
-    # genuine one. Flagged honestly now.
+    Deliberately NOT an LLM call any more, on this branch: once "abnormal"
+    and per-value citation are off the table, there's nothing left for a
+    model to meaningfully summarize that isn't already covered by each
+    test's own (already-grounded, already-verified) what_it_measures /
+    lifestyle_suggestions / gp_question -- generating fresh top-level prose
+    would only reintroduce the same fabrication risk `_verify_grounded`
+    exists to catch, for no real benefit. Instead this reuses real,
+    already-verified per-test content deterministically. No LLM call means
+    no rate-limit exposure and no "summary_degraded" case to handle either.
+    """
+    count = len(explained_results)
+    plural = "test" if count == 1 else "tests"
     return {
-        "summary_degraded": True,
-        "overall_summary": f"Your report contains {len(explained_results)} tests. Several markers warrant discussion with your GP.",
-        "top_gp_topics": [f"Review {r.raw_name} ({r.value} {r.unit})" for r in abnormal[:3]] if abnormal else ["Routine follow-up"],
-        "top_lifestyle_change": "Focus on balanced nutrition, adequate hydration, and regular activity.",
-        "closing_message": "Always discuss these results with your healthcare provider.",
+        "summary_degraded": False,
+        "overall_summary": (
+            f"This report explains {count} {plural} from your results. Each explanation "
+            "below describes what the test measures and general, NHS/NIH-grounded habits "
+            "that support that area of health -- it does not interpret your specific "
+            "values, so please review your actual results with your GP."
+        ),
+        "top_gp_topics": [r.gp_question for r in explained_results[:3] if r.gp_question] or ["Routine follow-up"],
+        "top_lifestyle_change": next(
+            (s for r in explained_results for s in (r.lifestyle_suggestions or [])),
+            "Focus on balanced nutrition, adequate hydration, and regular activity.",
+        ),
+        "closing_message": "Always discuss your specific results with your GP or healthcare provider.",
     }

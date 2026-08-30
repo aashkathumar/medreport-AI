@@ -24,19 +24,25 @@ class TestResult(BaseModel):
 
 
 class ExplainedResult(BaseModel):
+    # ETHICS CONSTRAINT (Chris Clarke, project ethics reviewer): the
+    # patient-facing output on this branch never compares a result against
+    # a reference range or states what a specific value/status means
+    # clinically -- that reads as clinical decision support, not viable for
+    # an MSc-scope project. Accordingly `status`, `normal_range_min`,
+    # `normal_range_max`, and `what_your_result_means` are deliberately NOT
+    # patient-facing fields here (unlike feature/developv4.1, where they are
+    # correct and intentional). `value`/`unit` are kept only so the patient
+    # can see what was extracted from their report, not to support a
+    # normal/high/low judgement about it.
     test_id: str
     raw_name: str
     value: Union[str, float]
     unit: str
-    status: RangeStatus
     panel_name: Optional[str] = None
     specimen: Optional[str] = None
-    normal_range_min: Optional[float] = None
-    normal_range_max: Optional[float] = None
     source: str = "NHS UK / NIH MedlinePlus"
     source_urls: Optional[List[str]] = []
     what_it_measures: str
-    what_your_result_means: str
     lifestyle_suggestions: List[str]
     gp_question: Optional[str] = "What questions should I discuss with my GP regarding this test?"
     disclaimer: Optional[str] = (

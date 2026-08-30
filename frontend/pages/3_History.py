@@ -18,9 +18,12 @@ st.write(f"You have **{len(reports)}** report(s) from this session.")
 
 for item in reports:
     data = item["report_data"]
-    flagged = [r for r in data.get("explained_results", []) if r.get("status") != "normal"]
+    # ETHICS CONSTRAINT (Chris Clarke): no status field on explained_results
+    # on this branch, so no "flagged value(s)" count -- explained_results
+    # count alone, not a high/low tally.
+    count = len(data.get("explained_results", []))
 
-    with st.expander(f"{item['time_label']} -- {len(flagged)} flagged value(s)"):
+    with st.expander(f"{item['time_label']} -- {count} test(s) explained"):
         st.write(data.get("overall_summary", ""))
         if st.button("Load this report", key=item["report_id"]):
             st.session_state.report = data
