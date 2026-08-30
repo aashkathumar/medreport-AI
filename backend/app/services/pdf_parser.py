@@ -242,10 +242,36 @@ def _extract_tables_with_pages(file_bytes: bytes) -> Tuple[List[Tuple[int, list,
                 if not tables:
                     continue
                 specimen = _page_specimen(page.extract_text() or "")
+                # BUG FOUND (LabReport.pdf, a QuantiFERON-TB panel): pdfplumber
+                # sometimes splits what is visually ONE table into separate
+                # table objects -- confirmed directly on this report, where the
+                # header row (['Test Name', 'Result', 'Bio. Ref. Range', 'Unit',
+                # 'Method']) came back as its own single-row table, immediately
+                # followed by a second table holding all 5 data rows and no
+                # header at all. _table_to_structured_rows requires the header
+                # to be IN the table it's given (it discards a table entirely
+                # if _find_header_row can't find one), so the header-only table
+                # was too short to survive on its own (len < 2) and the
+                # data-only table was discarded for having no header -- between
+                # the two, every real row was lost, with nothing to fall back
+                # on since a ruled table WAS technically found (so the page
+                # never reached the columnar/positional extractor either).
+                # Fix: if a table is a lone header row, don't emit it as its
+                # own table -- carry it forward and prepend it to the very
+                # next table on the same page instead, which is where a
+                # split-off header's data almost always actually lives.
+                pending_header = None
                 for table in tables:
-                    if table:
-                        out.append((page_num, table, specimen))
-                        ruled_pages.add(page_num)
+                    if not table:
+                        continue
+                    if pending_header is not None:
+                        table = [pending_header] + table
+                        pending_header = None
+                    if len(table) == 1 and _find_header_row(table) == 0:
+                        pending_header = table[0]
+                        continue
+                    out.append((page_num, table, specimen))
+                    ruled_pages.add(page_num)
     except Exception as e:
         print(f"pdfplumber table extraction failed: {e}")
     return out, ruled_pages

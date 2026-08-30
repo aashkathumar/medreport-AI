@@ -10,7 +10,7 @@
     {
       "name": "frontend",
       "runtimeExecutable": "backend/.venv/bin/streamlit",
-      "runtimeArgs": ["run", "frontend/App.py", "--server.port", "8501", "--server.headless", "true"],
+      "runtimeArgs": ["run", "frontend/main.py", "--server.port", "8501", "--server.headless", "true"],
       "port": 8501
     }
   ]

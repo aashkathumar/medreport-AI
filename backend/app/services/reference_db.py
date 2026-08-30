@@ -36,12 +36,24 @@ ALIAS_MAP = {
     # -- 11 of PK0016's 19 "not covered" rejections were this, not a
     # missing-source problem: the corpus already had grounding content for
     # every one of these, just filed under a different canonical id.
-    # tc_hdl_ratio/sgot_sgpt_ratio are lower-confidence: they ground on the
-    # component analyte, not a dedicated "ratio" source page, same pattern
-    # already proven to work for CHOL/HDL Ratio and LDL/HDL Ratio (no alias
-    # needed there -- semantic retrieval alone found the cholesterol/HDL
-    # content and the LLM synthesized a reasonable explanation from it).
-    "urinary_transparency": "CLEARITY",
+    #
+    # BUG FOUND (2026-08-30, medreport_ai-2/3.pdf): tc_hdl_ratio and
+    # sgot_sgpt_ratio used to live HERE, in ALIAS_MAP -- which doesn't just
+    # steer grounding, it sets the RESULT's own test_id (resolve_test_id()
+    # is what pdf_parser.py calls to identity-tag each row). Aliasing
+    # "SGOT/SGPT Ratio" straight to "AST" meant that row's test_id became
+    # literally identical to the real "SGOT (AST)" row on the same report --
+    # not just for grounding, but for the per-test_id what_it_measures
+    # cache (_wim_get) AND the batch LLM response dict (both keyed by
+    # test_id). Two genuinely different rows collapsed onto one shared
+    # identity, so the ratio row silently received the AST row's entire
+    # cached explanation, verbatim. Same thing for "90 Day Average Blood
+    # Glucose" aliased to "HBA1C". Moved both (plus tc_hdl_ratio) down to
+    # GROUNDING_ALIASES instead, which redirects retrieval ONLY -- the row
+    # keeps its own distinct synthetic test_id (SGOT_SGPT_RATIO /
+    # TC_HDL_RATIO / 90_DAY_AVERAGE_BLOOD_GLUCOSE via canonicalize_test_name)
+    # while still pulling the component analyte's reference material to
+    # explain from, exactly the intended fallback.
     "leukocyte_esterase": "URINE_LEUKOCYTES",
     "absolute_lymphocyte_count": "LYMPHOCYTES",
     "absolute_monocyte_count": "MONOCYTES",
@@ -49,9 +61,12 @@ ALIAS_MAP = {
     "absolute_basophil_count": "BASOPHILS",
     "blood_sugar_fasting": "GLUCOSE",
     "chloride": "CL",
-    "90_day_average_blood_glucose": "HBA1C",
-    "tc_hdl_ratio": "CHOL",
-    "sgot_sgpt_ratio": "AST",
+    # Unlike the ratio tests above, "Urinary Transparency" and "Clearity" are
+    # genuinely the SAME single measurement under two different labs'
+    # naming conventions -- they never both appear on one report, so merging
+    # their identity here (unlike SGOT/SGPT Ratio's) causes no same-report
+    # collision. Belongs in ALIAS_MAP, not GROUNDING_ALIASES.
+    "urinary_transparency": "CLEARITY",
 
     # BUG FOUND (LabReport.pdf, QuantiFERON-TB Gold panel): none of these
     # 4 component-tube names have an alias, so all 5 rows on this report
@@ -149,6 +164,18 @@ GROUNDING_ALIASES = {
     "TOTAL_IRON_BINDING_CAPACITY": "IRON",
     "TOTAL_IRON_BINDING_CAPACITY_TIBC": "IRON",
     "TRANSFERRIN_SATURATION": "IRON",
+    # Computed ratios/derived values: no dedicated "ratio" reference page
+    # exists, so ground on the component analyte's page and let the LLM
+    # synthesize a ratio-specific explanation from it -- same pattern
+    # already proven to work for CHOL/HDL Ratio and LDL/HDL Ratio (no entry
+    # needed there; semantic RAG retrieval alone finds the right page).
+    # These three needed an explicit redirect because their synthetic ids
+    # (SGOT_SGPT_RATIO, TC_HDL_RATIO, 90_DAY_AVERAGE_BLOOD_GLUCOSE) don't
+    # share enough vocabulary with the corpus's AST/CHOL/HBA1C pages for
+    # retrieval to find them unaided.
+    "SGOT_SGPT_RATIO": "AST",
+    "TC_HDL_RATIO": "CHOL",
+    "90_DAY_AVERAGE_BLOOD_GLUCOSE": "HBA1C",
 }
 
 # BUG FOUND (Sterling Accuris report, urinalysis panel): "Bilirubin" and
@@ -683,25 +710,41 @@ def finalize_result(result: dict, patient_sex: str = "unknown", patient_age: int
 
 def dedupe_results(results: List[dict]) -> List[dict]:
     """
-    De-duplicates extracted results by test_id (results can otherwise repeat
-    across table + LLM tiers, or across vision batches on long reports).
-    Keeps the most informative entry per test_id: prefers one with a
-    parseable printed ref_range, then one with a recognized/known test_id,
-    then first-seen.
+    De-duplicates extracted results by (test_id, raw_name) (results can
+    otherwise repeat across table + LLM tiers, or across vision batches on
+    long reports). Keeps the most informative entry per key: prefers one
+    with a parseable printed ref_range, then one with a recognized/known
+    test_id, then first-seen.
+
+    BUG FOUND (LabReport.pdf, a QuantiFERON-TB panel): keying on test_id
+    ALONE used to collapse genuinely different rows that happen to share
+    one canonical test_id -- confirmed directly on this report, where "TB
+    NIL Tube", "TB Antigen Tube", and "TB Ag Minus NIL" are three distinct
+    real measurements that all resolve to the single "TUBERCULOSIS"
+    reference entry (there's one generic screening page for the whole
+    panel, not one per sub-component). Deduping by test_id alone kept only
+    one of the three and silently discarded the other two, even though
+    they were never duplicates of each other -- test_id-alone dedup is
+    still correct and needed for the case this function was built for (the
+    SAME row found twice, once per extraction tier), it just needed a
+    second key to tell "the same row, twice" apart from "two different
+    rows that share a reference page".
     """
-    best: Dict[str, dict] = {}
-    order: List[str] = []
+    best: Dict[tuple, dict] = {}
+    order: List[tuple] = []
 
     def score(r: dict) -> tuple:
         return (bool(parse_ref_range_string(r.get("ref_range"))), bool(r.get("known")))
 
     for r in results:
         tid = r.get("test_id") or "UNKNOWN_TEST"
-        if tid not in best:
-            best[tid] = r
-            order.append(tid)
+        name_key = (r.get("raw_name") or "").strip().lower()
+        key = (tid, name_key)
+        if key not in best:
+            best[key] = r
+            order.append(key)
             continue
-        if score(r) > score(best[tid]):
-            best[tid] = r
+        if score(r) > score(best[key]):
+            best[key] = r
 
-    return [best[tid] for tid in order]
+    return [best[key] for key in order]
