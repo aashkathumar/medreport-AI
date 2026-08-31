@@ -135,3 +135,17 @@ if cached_pdf is not None and cached_pdf_report_id == current_report_id:
         file_name="medreport_ai.pdf",
         mime="application/pdf",
     )
+
+st.divider()
+# A second, always-available entry point back to Home for starting a fresh
+# report -- not a replacement for the "View results" / "Enter a new set of
+# tests" pairing on the Home page itself (kept as-is), but this is the point
+# where a user has just finished reviewing/downloading a report and may want
+# to explain a different one next, without scrolling all the way back up.
+if st.button("Explain another report"):
+    st.session_state.upload_status = None
+    st.session_state.upload_error = None
+    st.session_state.manual_results = []
+    st.session_state.pdf_bytes = None
+    st.session_state.pdf_bytes_report_id = None
+    st.switch_page("App.py")

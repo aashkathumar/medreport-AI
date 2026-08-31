@@ -10,6 +10,7 @@ change between releases.
 """
 from pathlib import Path
 import streamlit as st
+import streamlit.components.v1 as components
 
 _ASSETS = Path(__file__).resolve().parent / "assets"
 
@@ -32,7 +33,13 @@ _CSS = (
     ".stButton > button, .stDownloadButton > button { border-radius: 8px; font-weight: 500; }"
     # Text/number inputs and selects: match the button rounding instead of
     # Streamlit's default sharper corners, for a more cohesive card feel.
-    'div[data-baseweb="input"], div[data-baseweb="select"] > div { border-radius: 8px; }'
+    # BUG FOUND: inputs had no visible border in their resting state --
+    # Streamlit/BaseWeb only draws a border on hover/focus by default, so an
+    # empty field looked like plain background rather than a fillable box
+    # until the user happened to hover over it. Added a persistent, always-
+    # visible border so the field reads as an input target immediately.
+    'div[data-baseweb="input"], div[data-baseweb="select"] > div { border-radius: 8px; '
+    "border: 1px solid #E3D3AA !important; }"
     # CHANGED: cream instead of lavender, to match the new gold/white
     # palette instead of the old purple one.
     # BUG FOUND: "border: none" on stExpander itself did nothing visible --
@@ -117,9 +124,91 @@ _CSS = (
     "</style>"
 )
 
+# BUG FOUND (recurring source of user confusion): every st.rerun() -- which
+# fires on essentially every button click in this app ("Add test value",
+# "Explain my results", the polling loop, etc.) -- resets the browser's
+# scroll position to the very top of the page. This is a genuine Streamlit
+# platform limitation, not something st.session_state or app-code changes
+# can fix directly: Streamlit's own frontend does this on every rerun,
+# regardless of what Python code ran. Worked around at the browser level: a
+# zero-height component injects JS into the PARENT document (Streamlit
+# renders each component in a sandboxed iframe, so `window.parent` is
+# needed to reach the actual page, not the iframe's own empty body) that
+# saves scroll position to sessionStorage on every scroll event, and
+# restores it immediately after each rerun re-renders the page. This is a
+# client-side patch over a Streamlit limitation, not a perfect native fix --
+# a brief top-then-restore flicker is possible, but it removes the "have to
+# manually scroll back down after every click" problem this was written for.
+_SCROLL_RESTORE_JS = """
+<script>
+(function() {
+  const doc = window.parent.document;
+
+  // BUG FOUND while verifying this live, round 1: document.scrollingElement
+  // / documentElement never actually scrolls in current Streamlit -- the
+  // outer page is a fixed-height shell, and the real scrollable container
+  // is the <section class="main"> inside [data-testid="stAppViewContainer"].
+  // Found by directly measuring scrollHeight vs clientHeight on every
+  // element, not guessed.
+  function getScroller() {
+    return doc.querySelector('[data-testid="stAppViewContainer"] section.main');
+  }
+
+  // Scoped per page path (Home/Results/History each have their own URL
+  // under st.navigation), so switching to a genuinely different page still
+  // starts at the top -- only a rerun that stays ON the same page should
+  // preserve position.
+  function storageKey() {
+    return "medreport_scroll_pos:" + doc.location.pathname;
+  }
+
+  function restoreScroll() {
+    const scroller = getScroller();
+    if (!scroller) return;
+    const saved = sessionStorage.getItem(storageKey());
+    if (saved !== null) {
+      scroller.scrollTop = parseFloat(saved);
+    }
+    if (!scroller._medreportScrollBound) {
+      scroller.addEventListener("scroll", function() {
+        sessionStorage.setItem(storageKey(), scroller.scrollTop);
+      }, { passive: true });
+      scroller._medreportScrollBound = true;
+    }
+  }
+
+  restoreScroll();
+
+  // BUG FOUND while verifying this live, round 2: st.components.v1.html()
+  // renders into an iframe whose content Streamlit does not reload on every
+  // rerun (only on a genuine page load), so a plain one-shot script -- even
+  // with a short retry timeout -- only ever restored scroll ONCE, on first
+  // load. A real st.rerun() (clicking "Add test value", etc.) still reset
+  // scroll to 0 afterwards, since nothing re-ran to catch that reset.
+  // Verified directly: after a real Add-test-value click, scrollTop measured
+  // 0 despite this fix being present, before this observer was added.
+  // Fixed with a MutationObserver, registered ONCE (guarded so it survives
+  // across whatever re-injections do happen) and left running for the life
+  // of the tab, watching the app container for the DOM replacement every
+  // rerun causes -- restoring scroll (one frame later, so Streamlit's own
+  // reset-to-0 has already happened and this runs after it, not before) on
+  // every single rerun, not just the first page load.
+  if (!window.parent._medreportScrollObserverAttached) {
+    const target = doc.querySelector('[data-testid="stAppViewContainer"]') || doc.body;
+    const observer = new MutationObserver(function() {
+      requestAnimationFrame(restoreScroll);
+    });
+    observer.observe(target, { childList: true, subtree: true });
+    window.parent._medreportScrollObserverAttached = true;
+  }
+})();
+</script>
+"""
+
 
 def inject() -> None:
     st.markdown(_CSS, unsafe_allow_html=True)
+    components.html(_SCROLL_RESTORE_JS, height=0)
     # CHANGED: the brand mark previously lived inside the sidebar's own
     # scrollable content, below the native App/Results/History page list --
     # Streamlit renders that list itself, at a fixed position, before any

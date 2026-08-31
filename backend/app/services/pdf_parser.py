@@ -492,7 +492,24 @@ def _bucket_line(line_words: List[dict], cols: dict) -> dict:
 _NON_TEST_NAME_RE = re.compile(
     r"^\s*(dr\.?|prof\.?|m\.?d\.?|mbbs|dnb|md\s*\(|consultant|pathologist|"
     r"technologist|signature|verified|authoris|authoriz|approved|"
-    r"end of report|interpretation|note|comment|remark)",
+    r"end of report|interpretation|note|comment|remark|"
+    # BUG FOUND (LabReport.pdf, QuantiFERON-TB panel): "Final Result" ->
+    # "Negative" was extracted as its own test row and, having no NHS/NIH
+    # page of its own (it isn't an analyte, it's the report's own summary
+    # verdict over the three real TB Nil/Antigen/Ag-Minus-Nil tube results
+    # already on the same report), fell through to "not covered" -- a
+    # technically-honest fallback for a row that should never have been
+    # treated as a testable result in the first place. Same class of
+    # extraction error as the doctor-name lines this regex already filters,
+    # just an interpretive verdict instead of a signature block.
+    r"final result|overall result|overall interpretation|test result|"
+    # "(Urine )?Quantity" alone -- specimen volume submitted for testing,
+    # not a diagnostic measurement with health information behind it (there
+    # is no "what your urine quantity means" NHS/NIH page, nor should there
+    # be). Anchored with $ so this only excludes the bare label -- a
+    # genuinely different, clinically real test that happens to include the
+    # word "quantity" as part of a longer name is not touched.
+    r"(urine\s+)?quantity\s*$)",
     re.IGNORECASE,
 )
 

@@ -33,7 +33,7 @@ st.set_page_config(
 st.session_state["_launched_via_main"] = True
 
 pg = st.navigation([
-    st.Page("App.py", title="App", default=True),
+    st.Page("App.py", title="Home", default=True),
     st.Page("pages/2_Results.py", title="Results"),
     st.Page("pages/3_History.py", title="History"),
 ])
