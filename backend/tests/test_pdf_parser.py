@@ -1,5 +1,6 @@
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.services.pdf_parser import _extract_from_text
 
 
