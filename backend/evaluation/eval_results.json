@@ -1,0 +1,195 @@
+{
+  "rows": [
+    {
+      "category": "Full blood count",
+      "raw_name": "Haemoglobin",
+      "value": 14.2,
+      "unit": "g/dL",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 9.9
+    },
+    {
+      "category": "Full blood count",
+      "raw_name": "White Blood Cell Count",
+      "value": 7.1,
+      "unit": "10^9/L",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 9.5
+    },
+    {
+      "category": "Full blood count",
+      "raw_name": "Platelet Count",
+      "value": 260,
+      "unit": "10^9/L",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 9.3
+    },
+    {
+      "category": "Full blood count",
+      "raw_name": "Haematocrit",
+      "value": 42.0,
+      "unit": "%",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 9.2
+    },
+    {
+      "category": "Full blood count",
+      "raw_name": "Mean Corpuscular Volume",
+      "value": 89.0,
+      "unit": "fL",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 9.6
+    },
+    {
+      "category": "Lipid panel",
+      "raw_name": "Total Cholesterol",
+      "value": 5.1,
+      "unit": "mmol/L",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 11.7
+    },
+    {
+      "category": "Lipid panel",
+      "raw_name": "HDL Cholesterol",
+      "value": 1.4,
+      "unit": "mmol/L",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 11.3
+    },
+    {
+      "category": "Lipid panel",
+      "raw_name": "LDL Cholesterol",
+      "value": 3.0,
+      "unit": "mmol/L",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 11.1
+    },
+    {
+      "category": "Lipid panel",
+      "raw_name": "Triglycerides",
+      "value": 1.2,
+      "unit": "mmol/L",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 9.5
+    },
+    {
+      "category": "Lipid panel",
+      "raw_name": "Total Cholesterol/HDL Ratio",
+      "value": 3.6,
+      "unit": "ratio",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 10.2
+    },
+    {
+      "category": "Urinalysis",
+      "raw_name": "Urine pH",
+      "value": 6.0,
+      "unit": "pH",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 8.3
+    },
+    {
+      "category": "Urinalysis",
+      "raw_name": "Urine Protein",
+      "value": "Negative",
+      "unit": "",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 10.0
+    },
+    {
+      "category": "Urinalysis",
+      "raw_name": "Urine Glucose",
+      "value": "Negative",
+      "unit": "",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 10.3
+    },
+    {
+      "category": "Urinalysis",
+      "raw_name": "Specific Gravity",
+      "value": 1.02,
+      "unit": "",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 9.8
+    },
+    {
+      "category": "Urinalysis",
+      "raw_name": "Leukocyte Esterase",
+      "value": "Negative",
+      "unit": "",
+      "degraded": false,
+      "ungrounded": false,
+      "grounding_pass": true,
+      "completeness": true,
+      "fk_grade": 10.6
+    }
+  ],
+  "summary": {
+    "Full blood count": {
+      "n": 5,
+      "accuracy_pct": 100.0,
+      "completeness_pct": 100.0,
+      "fk_grade": 9.5
+    },
+    "Lipid panel": {
+      "n": 5,
+      "accuracy_pct": 100.0,
+      "completeness_pct": 100.0,
+      "fk_grade": 10.8
+    },
+    "Urinalysis": {
+      "n": 5,
+      "accuracy_pct": 100.0,
+      "completeness_pct": 100.0,
+      "fk_grade": 9.8
+    },
+    "Overall": {
+      "n": 15,
+      "accuracy_pct": 100.0,
+      "completeness_pct": 100.0,
+      "fk_grade": 10.0
+    }
+  }
+}
