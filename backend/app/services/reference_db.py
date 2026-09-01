@@ -67,6 +67,15 @@ ALIAS_MAP = {
     # their identity here (unlike SGOT/SGPT Ratio's) causes no same-report
     # collision. Belongs in ALIAS_MAP, not GROUNDING_ALIASES.
     "urinary_transparency": "CLEARITY",
+    # BUG FOUND (PK0016.pdf): both raw labels are the exact same measurement
+    # as an already-covered, already-cached id, just missing the alias --
+    # resolve_test_id() returned None, so each fell through to its own
+    # synthetic id instead of the real, corpus-covered one. Merging identity
+    # here is safe the same way urinary_transparency/CLEARITY is: these are
+    # alternate labels for one test, not a distinct sub-fraction like
+    # HB_A2, so sharing the cached explanation is correct, not lossy.
+    "total_iron_binding_capacity": "TOTAL_IRON_BINDING_CAPACITY_TIBC",
+    "25_oh_vitamin_d_total": "VIT_D",
 
     # BUG FOUND (LabReport.pdf, QuantiFERON-TB Gold panel): none of these
     # 4 component-tube names have an alias, so all 5 rows on this report
@@ -153,12 +162,22 @@ BLOOD_TYPE_TEST_IDS = {"ABO_TYPE", "RH_D_TYPE"}
 # Each of these keeps its own identity and its own reported value; only the
 # page consulted for GROUNDING is redirected.
 GROUNDING_ALIASES = {
-    # Haemoglobin-electrophoresis fractions: each is a TYPE of haemoglobin, so
-    # the MedlinePlus haemoglobin page is their correct reference.
-    "HB_A": "HGB",
-    "HB_A2": "HGB",
-    "FOETAL_HB": "HGB",
-    "FETAL_HB": "HGB",
+    # BUG FOUND (2026-09-01, live-tested on Sterling Accuris): HB_A/HB_A2/
+    # FOETAL_HB used to redirect here on the assumption that "a type of
+    # haemoglobin" made the general haemoglobin page a valid reference.
+    # Checked directly against the actual chunks tagged HGB before trusting
+    # that assumption -- none of them mention haemoglobin electrophoresis,
+    # fractions, Hb A, Hb A2, or fetal haemoglobin at all; the content is
+    # entirely about the total haemoglobin count and iron-deficiency
+    # anaemia. On this branch specifically, the redirect produced a
+    # confirmed, serious hallucination: the model filled in fabricated
+    # reference-range numbers (get_normal_range('HB_A', ...) returns None
+    # -- there is no real range for this test anywhere in the system) and,
+    # for FOETAL_HB, invented content about "monitoring fetal health during
+    # pregnancy" -- a genuine clinical error, since this is a haemoglobin-
+    # fraction test on the patient's own blood, unrelated to an actual
+    # pregnancy. Removed so these fall through to the same honest "not
+    # covered" path as P2 Peak/P3 Peak/Amorphous Material.
     # Iron studies: both are reported on the MedlinePlus iron-tests page.
     "TIBC": "IRON",
     "TOTAL_IRON_BINDING_CAPACITY": "IRON",

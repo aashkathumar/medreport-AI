@@ -9,7 +9,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 9.9
+      "fk_grade": 10.0
     },
     {
       "category": "Full blood count",
@@ -20,7 +20,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 9.5
+      "fk_grade": 9.2
     },
     {
       "category": "Full blood count",
@@ -31,7 +31,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 9.3
+      "fk_grade": 9.9
     },
     {
       "category": "Full blood count",
@@ -53,7 +53,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 9.6
+      "fk_grade": 9.3
     },
     {
       "category": "Lipid panel",
@@ -64,7 +64,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 11.7
+      "fk_grade": 10.3
     },
     {
       "category": "Lipid panel",
@@ -75,7 +75,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 11.3
+      "fk_grade": 10.1
     },
     {
       "category": "Lipid panel",
@@ -86,7 +86,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 11.1
+      "fk_grade": 11.9
     },
     {
       "category": "Lipid panel",
@@ -97,7 +97,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 9.5
+      "fk_grade": 9.2
     },
     {
       "category": "Lipid panel",
@@ -108,7 +108,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 10.2
+      "fk_grade": 11.0
     },
     {
       "category": "Urinalysis",
@@ -119,7 +119,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 8.3
+      "fk_grade": 10.1
     },
     {
       "category": "Urinalysis",
@@ -130,7 +130,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 10.0
+      "fk_grade": 10.3
     },
     {
       "category": "Urinalysis",
@@ -141,7 +141,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 10.3
+      "fk_grade": 9.9
     },
     {
       "category": "Urinalysis",
@@ -152,7 +152,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 9.8
+      "fk_grade": 11.3
     },
     {
       "category": "Urinalysis",
@@ -163,7 +163,7 @@
       "ungrounded": false,
       "grounding_pass": true,
       "completeness": true,
-      "fk_grade": 10.6
+      "fk_grade": 9.7
     }
   ],
   "summary": {
@@ -177,19 +177,19 @@
       "n": 5,
       "accuracy_pct": 100.0,
       "completeness_pct": 100.0,
-      "fk_grade": 10.8
+      "fk_grade": 10.5
     },
     "Urinalysis": {
       "n": 5,
       "accuracy_pct": 100.0,
       "completeness_pct": 100.0,
-      "fk_grade": 9.8
+      "fk_grade": 10.3
     },
     "Overall": {
       "n": 15,
       "accuracy_pct": 100.0,
       "completeness_pct": 100.0,
-      "fk_grade": 10.0
+      "fk_grade": 10.1
     }
   }
 }

@@ -1,7 +1,17 @@
 [theme]
 base = "light"
-primaryColor = "#4F5FE0"
+# CHANGED: full palette swap per the reference image -- gold/amber as the
+# accent (was purple), page background back to white, functional card tint
+# moved from lavender to a warm cream to match.
+primaryColor = "#F2A93B"
 backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F4F6FE"
+secondaryBackgroundColor = "#FFF6E8"
 textColor = "#232946"
 font = "sans serif"
+
+[client]
+# Hides the native "Deploy" button and reduces the top-right kebab menu to
+# almost nothing (no Rerun/Settings/Print/Record/Clear cache) -- those are
+# Streamlit's own dev-mode chrome, not something the app renders, and have
+# no use for an end user of a finished app.
+toolbarMode = "minimal"

@@ -8,15 +8,28 @@ import requests
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 from theme import inject as inject_theme
 
+# BUG FOUND (recurring): running `streamlit run App.py` directly, instead
+# of the real entry point `streamlit run main.py`, used to half-work --
+# no error, just a lone page missing the Results/History nav and the
+# explicit "App" title override from main.py's st.navigation() call,
+# which looked subtly broken (most visibly: a lowercase "app" nav label
+# derived from whatever casing was typed at launch) rather than obviously
+# wrong. main.py sets this flag before running; if it's missing, this file
+# was launched directly, so stop with a message instead of half-rendering.
+if not st.session_state.get("_launched_via_main"):
+    st.error(
+        "This page was opened directly. Please run the app with "
+        "`streamlit run main.py` (not `App.py`) so navigation and page "
+        "titles work correctly."
+    )
+    st.stop()
+
 # Set MEDREPORT_API_URL as an env var / Streamlit secret when deployed to the cloud.
 API = os.environ.get("MEDREPORT_API_URL", "http://localhost:8000/api/v1")
 
-st.set_page_config(
-    page_title="MedReport AI",
-    page_icon=":stethoscope:",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+# CHANGED: st.set_page_config() moved to main.py -- with st.navigation()
+# (see main.py), it must be called once in the entry script, before
+# st.navigation()/pg.run(), not repeated in each page.
 inject_theme()
 
 if "user_id" not in st.session_state:
@@ -38,25 +51,47 @@ if "upload_error" not in st.session_state:
 with st.sidebar:
     st.header("Your Profile")
     st.session_state.profile["age"] = st.number_input("Age", min_value=16, max_value=90, value=30, step=1)
-    st.session_state.profile["sex"] = st.selectbox("Sex", ["prefer_not_to_say", "male", "female"])
-    st.session_state.profile["diet_type"] = st.selectbox("Diet", ["omnivore", "vegetarian", "vegan"])
+    # CHANGED: format_func changes only the DISPLAYED label -- "Prefer Not
+    # To Say" / "Omnivore" etc. -- while st.session_state still gets the
+    # original lowercase/underscored value ("prefer_not_to_say",
+    # "omnivore", ...) unchanged, exactly as the backend expects it
+    # (reference_db.py lowercases `sex` before matching, and `diet_type`
+    # goes straight into an LLM prompt as plain text -- neither needed the
+    # display formatting, but both would have been a real risk to touch).
+    st.session_state.profile["sex"] = st.selectbox(
+        "Sex", ["prefer_not_to_say", "male", "female"],
+        format_func=lambda x: x.replace("_", " ").title(),
+    )
+    st.session_state.profile["diet_type"] = st.selectbox(
+        "Diet", ["omnivore", "vegetarian", "vegan"],
+        format_func=lambda x: x.capitalize(),
+    )
     st.caption("Your profile personalises the lifestyle recommendations.")
     st.divider()
 
     # No login, no directory to pick from -- just a label for this session's
     # reports. Gone (along with everything else in session_state) the moment
     # this tab closes. `key=` keeps it correctly sticky within the session.
-    st.text_input("Your name (this session only)", key="user_id")
+    # CHANGED: "(this session only)" moved out of the label and into a
+    # caption below the field, on request.
+    st.text_input("Name", key="user_id")
+    st.caption("Noted only for this session -- not saved anywhere.")
 
 # Original illustration (not traced from any reference image) in the same
 # visual language as the moodboard the user shared -- a card, floating
 # accent blobs, colour-coded rows -- but drawn around what this app
 # actually shows a patient: a report with status-flagged result rows and a
 # pulse-line motif, rather than a generic doctor/calendar scene.
+# BUG FOUND: the <svg> tag's OWN inline style had a second, separate
+# max-width: 360px cap, independent of the outer container div's max-width
+# (raised to 480px in an earlier round) -- the SVG's own cap was the
+# tighter of the two, so that earlier "make it bigger" fix had no visible
+# effect; the container just had more empty space around a still-360px
+# image. Raised to match.
 _HERO_SVG = """
-<svg viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto; max-width:360px;">
+<svg viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto; max-width:480px;">
   <circle cx="440" cy="110" r="90" fill="#FFD166" opacity="0.85"/>
-  <circle cx="490" cy="260" r="115" fill="#FF7A59" opacity="0.8"/>
+  <circle cx="490" cy="260" r="115" fill="#C1440E" opacity="0.85"/>
   <rect x="140" y="60" width="300" height="280" rx="22" fill="#FFFFFF" stroke="#E3E6FA" stroke-width="2"/>
   <rect x="168" y="90" width="244" height="30" rx="7" fill="#EEF0FE"/>
   <circle cx="186" cy="105" r="7" fill="#4F5FE0"/>
@@ -84,27 +119,40 @@ _HERO_SVG = """
 </svg>
 """
 
+# CHANGED: wordmark colour moved from the old primary purple to a deep
+# amber -- dark enough to stay legible on the page's white background
+# (unlike the reference image's own accent gold, which is too light for
+# body-sized text on white), but still clearly part of the new gold family
+# rather than a leftover purple.
 st.markdown(
-    '<div style="font-size:1.15rem; font-weight:700; color:#4F5FE0; '
-    'letter-spacing:0.02em; margin-bottom:14px;">MedReport AI</div>',
+    '<div style="font-size:2.4rem; font-weight:800; color:#B5651D; '
+    'letter-spacing:0.01em; margin-bottom:16px; text-align:left;">MedReport AI</div>',
     unsafe_allow_html=True,
 )
+# CHANGED: hero background moved from the purple gradient to gold/amber, on
+# request. NOTE left deliberately visible: the illustration inside
+# (_HERO_SVG, defined above) still uses its original purple/blue accent
+# colours for the bars and pulse line -- those were not touched, since the
+# request was about the background specifically, but they may now read as
+# an odd colour clash against a gold background rather than the purple one
+# they were designed to sit on. Worth a follow-up pass if that reads wrong
+# once you see it live.
 st.markdown(
     f"""
-<div style="background: linear-gradient(135deg, #4F5FE0 0%, #6C63FF 100%);
+<div style="background: linear-gradient(135deg, #F2A93B 0%, #EF9520 100%);
     border-radius: 22px; padding: 40px 44px; margin-bottom: 28px;
     display: flex; align-items: center; gap: 32px; flex-wrap: wrap;">
   <div style="flex: 1 1 320px; min-width: 260px;">
     <div style="color: #FFFFFF; font-size: 2.1rem; font-weight: 700; line-height: 1.18; margin-bottom: 14px;">
       Understand Your Lab Results, Instantly
     </div>
-    <div style="color: #E7E9FC; font-size: 1.02rem; line-height: 1.55;">
+    <div style="color: #FFF3DE; font-size: 1.02rem; line-height: 1.55;">
       Upload your blood test or urinalysis report and receive plain-English
       explanations with personalised lifestyle guidance -- grounded only in
       NHS UK and NIH MedlinePlus sources.
     </div>
   </div>
-  <div style="flex: 1 1 280px; min-width: 240px; max-width: 360px;">
+  <div style="flex: 1 1 280px; min-width: 240px; max-width: 480px;">
     {_HERO_SVG}
   </div>
 </div>
@@ -188,7 +236,14 @@ elif status == "done":
         # banner and always requires the explicit click, so the behaviour is
         # identical regardless of when or how many times you land here.
         st.success("Report explained!")
-        col_a, col_b = st.columns(2)
+        # BUG FOUND: st.columns(2) stretches across the full page width, so
+        # with only two short buttons in it "View results" sat pinned to the
+        # far left and "Upload another report" sat pinned to the far right,
+        # with a large stretch of empty space between them -- looked like a
+        # layout mistake rather than one related button pair. A narrow
+        # column pair, sized to the buttons rather than the page, keeps them
+        # sitting together the way two related actions should.
+        col_a, col_b, _spacer = st.columns([1, 1.4, 3])
         with col_a:
             if st.button("View results", type="primary"):
                 st.switch_page("pages/2_Results.py")
@@ -197,7 +252,11 @@ elif status == "done":
                 st.session_state.upload_status = None
                 st.session_state.upload_error = None
                 st.rerun()
-        st.divider()
+        # BUG FOUND: this divider and the one right before "Manual Entry"
+        # (further down) rendered back-to-back with nothing in between,
+        # since the file uploader is hidden while status is "done" -- two
+        # grey lines stacked directly on top of each other for no reason.
+        # Removed; the Manual Entry section's own divider is enough.
 elif status == "error":
     st.error(st.session_state.upload_error)
 elif status == "manual_needed":
@@ -278,7 +337,7 @@ def _run_manual_explain(manual_results, user_id, age, sex, diet_type):
 
 
 st.divider()
-st.subheader("Manual Entry (fallback)")
+st.subheader("Manual Entry")
 st.caption("If your PDF did not parse correctly, enter values manually here.")
 
 if "manual_results" not in st.session_state:

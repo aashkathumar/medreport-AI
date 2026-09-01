@@ -205,3 +205,16 @@ if cached_pdf is not None and cached_pdf_report_id == current_report_id:
         file_name="medreport_ai.pdf",
         mime="application/pdf",
     )
+
+st.divider()
+# Ported from feature/developv4.2: a second, always-available entry point
+# back to Home for starting a fresh report, for a user who has just
+# finished reviewing/downloading this one and wants to explain a
+# different one next, without scrolling all the way back up.
+if st.button("Explain another report"):
+    st.session_state.upload_status = None
+    st.session_state.upload_error = None
+    st.session_state.manual_results = []
+    st.session_state.pdf_bytes = None
+    st.session_state.pdf_bytes_report_id = None
+    st.switch_page("App.py")
