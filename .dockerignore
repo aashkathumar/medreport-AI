@@ -7,7 +7,7 @@
 **/*.pyc
 **/.venv
 **/venv
-local_data
+local_data/reports.json
 *.md
 .DS_Store
 .vscode

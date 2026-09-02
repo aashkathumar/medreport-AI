@@ -50,6 +50,16 @@ RUN pip install --no-cache-dir torch==2.13.0 --index-url https://download.pytorc
 COPY backend/app ${LAMBDA_TASK_ROOT}/backend/app
 COPY data ${LAMBDA_TASK_ROOT}/data
 
+# Bakes in the already-precomputed, already-verified per-test explanation
+# cache so a deployed instance serves cached content immediately instead of
+# generating (and re-verifying) it from scratch on every test's first real
+# request. Lambda's filesystem is read-only, so this is the ONLY way this
+# content reaches a deployed instance -- llm_service.py's cache-write path
+# degrades to in-memory-only on this read-only root (see the fix in
+# app/services/llm_service.py:_cache_save), it cannot write this directory
+# itself at runtime.
+COPY local_data ${LAMBDA_TASK_ROOT}/local_data
+
 # The "app" package lives under backend/, not directly at LAMBDA_TASK_ROOT
 # -- Lambda only puts LAMBDA_TASK_ROOT itself on sys.path by default, so
 # this makes `app.main.handler` importable without moving files around.

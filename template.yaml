@@ -1,64 +1,81 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 
-# NOTE: this template deploys the backend/ folder as a zip-based Lambda.
-# Because this project uses sentence-transformers (for RAG embeddings),
-# the deployed package will likely exceed the zip size limit -- you will
-# need to switch to a container-image Lambda deployment before this
-# template will deploy successfully. Covered in a later step; for now,
-# focus on getting everything working locally.
+# Deploys the backend as a CONTAINER-IMAGE Lambda (built from Dockerfile.aws),
+# not a zip package -- this project's dependencies (sentence-transformers,
+# faiss-cpu) exceed the zip-based Lambda package size limit, confirmed
+# during development (see Dockerfile.aws's own comments for the base-image
+# and CPU-only-torch fixes that made the image buildable and small enough
+# for Lambda's 10,240 MB image-size ceiling).
+#
+# Before deploying:
+#   1. Build and push the image to ECR (see backend/tests or the project
+#      README's deployment section for the exact commands), then replace
+#      IMAGE_URI_PLACEHOLDER below with the pushed image's URI.
+#   2. Create one SSM SecureString parameter per provider key this project
+#      actually uses, e.g.:
+#        aws ssm put-parameter --name /medreport/groq_api_key --type SecureString --value "..."
+#      for each of: groq_api_key, mistral_api_key, nvidia_api_key,
+#      openrouter_api_key, gemini_api_key, cohere_api_key, cerebras_api_key,
+#      cloudflare_api_key, cloudflare_account_id (see backend/app/config.py
+#      for the full list -- a key left unset simply isn't used, per
+#      provider_has_key(), so only set the ones you actually have).
+#
+# Uses a Lambda FUNCTION URL, not API Gateway: API Gateway hard-caps every
+# request at 29 seconds regardless of the Lambda's own timeout setting, and
+# this project's report-generation calls legitimately take longer than that
+# on large reports (up to several minutes, per the circuit-breaker findings
+# in Chapter 3). A Function URL supports the full Lambda timeout instead.
 
 Globals:
   Function:
-    Timeout: 30
-    MemorySize: 512
+    Timeout: 900  # Lambda's own maximum; a Function URL (unlike API
+                  # Gateway) actually lets a request run this long.
+    MemorySize: 2048  # sentence-transformers + faiss-cpu + the RAG index
+                       # need real headroom; 512MB (the previous value)
+                       # would OOM on model load alone.
     Environment:
       Variables:
-        ANTHROPIC_API_KEY: !Sub '{{resolve:ssm:/medreport/anthropic_key}}'
         AWS_REGION_NAME: eu-west-2
-        S3_BUCKET_NAME: medreport-ai-bucket
-        DYNAMODB_TABLE_NAME: medreport-reports
         APP_ENV: production
+        GROQ_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/groq_api_key}}'
+        MISTRAL_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/mistral_api_key}}'
+        NVIDIA_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/nvidia_api_key}}'
+        OPENROUTER_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/openrouter_api_key}}'
+        GEMINI_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/gemini_api_key}}'
+        COHERE_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/cohere_api_key}}'
+        CEREBRAS_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/cerebras_api_key}}'
+        CLOUDFLARE_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/cloudflare_api_key}}'
+        CLOUDFLARE_ACCOUNT_ID: !Sub '{{resolve:ssm-secure:/medreport/cloudflare_account_id}}'
 
 Resources:
   MedReportFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: backend/
-      Handler: app.main.handler
-      Runtime: python3.12  # see Dockerfile.aws -- python3.11's Lambda base image
-                           # runs on Amazon Linux 2, too old to install this
-                           # project's dependencies (numpy>=2.0/faiss-cpu have no
-                           # compatible wheels); 3.12 runs on Amazon Linux 2023.
-      Events:
-        Api:
-          Type: Api
-          Properties:
-            Path: /{proxy+}
-            Method: ANY
+      PackageType: Image
+      ImageUri: IMAGE_URI_PLACEHOLDER  # e.g. <account-id>.dkr.ecr.eu-west-2.amazonaws.com/medreport-ai-backend-aws:latest
+      FunctionUrlConfig:
+        AuthType: NONE  # No per-request AWS auth -- matches this app's
+                         # existing design (no login system); CORS is opened
+                         # below for the frontend to be able to call it.
+        Cors:
+          AllowOrigins: ["*"]
+          AllowMethods: ["*"]
+          AllowHeaders: ["*"]
+    Metadata:
+      # Required by SAM for Image-package functions -- points at the
+      # Dockerfile used to build the pushed image, for `sam build` to work
+      # locally even though deployment itself uses the already-pushed image.
+      Dockerfile: Dockerfile.aws
+      DockerContext: .
 
-  ReportsTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: medreport-reports
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: user_id
-          AttributeType: S
-        - AttributeName: report_id
-          AttributeType: S
-      KeySchema:
-        - AttributeName: user_id
-          KeyType: HASH
-        - AttributeName: report_id
-          KeyType: RANGE
+# NOTE: the DynamoDB table and S3 bucket previously defined here were
+# removed -- this project no longer persists reports server-side at all
+# (session-scoped in the frontend only, per the ethics-driven storage
+# removal), so this template no longer needs to provision storage the
+# application never uses.
 
-  ReportsBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: medreport-ai-bucket
-      LifecycleConfiguration:
-        Rules:
-          - Id: DeleteTransientFiles
-            Status: Enabled
-            ExpirationInDays: 1
+Outputs:
+  FunctionUrl:
+    Description: Public HTTPS endpoint for the backend API
+    Value: !GetAtt MedReportFunctionUrl.FunctionUrl

@@ -726,10 +726,25 @@ def _cache_load() -> None:
 def _cache_save() -> None:
     """Full rewrite on every new entry -- simplest way to avoid a corrupted
     file from a partial append, and the expected size (low thousands of
-    entries at most, for a dissertation-scale project) makes that cheap."""
-    _CACHE_FILE.parent.mkdir(exist_ok=True)
-    entries = [{"key": list(k), "value": v} for k, v in _EXPLANATION_CACHE.items()]
-    _CACHE_FILE.write_text(json.dumps(entries))
+    entries at most, for a dissertation-scale project) makes that cheap.
+
+    BUG FOUND (pre-deployment check, 2026-09-01): on AWS Lambda, the code
+    directory this path resolves under is baked into the read-only container
+    image -- a cache MISS during a live request (any test not already in the
+    image's precomputed cache) would raise on this write and fail the whole
+    explanation call, not just skip caching. Persistence across invocations
+    was never available on Lambda anyway (each cold start gets a fresh
+    filesystem), so this write was only ever a same-warm-container
+    optimisation there; failing to persist should degrade to in-memory-only
+    caching for that container's remaining lifetime, not crash the request.
+    Local/GCP deployments (writable filesystem) are unaffected -- the write
+    still happens exactly as before."""
+    try:
+        _CACHE_FILE.parent.mkdir(exist_ok=True)
+        entries = [{"key": list(k), "value": v} for k, v in _EXPLANATION_CACHE.items()]
+        _CACHE_FILE.write_text(json.dumps(entries))
+    except OSError as e:
+        print(f"Could not persist explanation cache to {_CACHE_FILE} (read-only filesystem?): {e}")
 
 
 _cache_load()
