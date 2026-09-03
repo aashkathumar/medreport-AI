@@ -12,7 +12,7 @@ doesn't change what gets typed next time.
 
 st.Page(..., title=...) sets the label explicitly, in code, independent of
 the launch command's casing entirely -- this is the actual fix, not
-another reminder to type the filename correctly. App.py/2_Results.py/
+another reminder to type the filename correctly. app.py/2_results.py/
 3_History.py are unchanged otherwise; st.Page can reference an existing
 script file directly, so none of their own content had to move.
 """
@@ -32,9 +32,18 @@ st.set_page_config(
 # obviously wrong. The guard turns that into an unmissable message instead.
 st.session_state["_launched_via_main"] = True
 
+# BUG FOUND on first deployment to Linux: these paths must match the files'
+# real names exactly. They previously read "App.py" and "pages/2_Results.py",
+# while the files committed to the repository are app.py and
+# pages/2_results.py. macOS's case-insensitive filesystem resolved either
+# spelling to the same file, so this ran locally for months; EC2's
+# case-sensitive filesystem does not, and Streamlit failed outright with
+# "Unable to create Page. The file App.py could not be found." The displayed
+# nav labels come from title= regardless, so matching the real casing here
+# costs nothing.
 pg = st.navigation([
-    st.Page("App.py", title="Home", default=True),
-    st.Page("pages/2_Results.py", title="Results"),
+    st.Page("app.py", title="Home", default=True),
+    st.Page("pages/2_results.py", title="Results"),
     st.Page("pages/3_History.py", title="History"),
 ])
 pg.run()

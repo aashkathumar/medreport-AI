@@ -38,15 +38,15 @@ Globals:
       Variables:
         AWS_REGION_NAME: eu-west-2
         APP_ENV: production
-        GROQ_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/groq_api_key}}'
-        MISTRAL_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/mistral_api_key}}'
-        NVIDIA_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/nvidia_api_key}}'
-        OPENROUTER_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/openrouter_api_key}}'
-        GEMINI_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/gemini_api_key}}'
-        COHERE_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/cohere_api_key}}'
-        CEREBRAS_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/cerebras_api_key}}'
-        CLOUDFLARE_API_KEY: !Sub '{{resolve:ssm-secure:/medreport/cloudflare_api_key}}'
-        CLOUDFLARE_ACCOUNT_ID: !Sub '{{resolve:ssm-secure:/medreport/cloudflare_account_id}}'
+        GROQ_API_KEY: !Sub '{{resolve:ssm:/medreport/groq_api_key}}'
+        MISTRAL_API_KEY: !Sub '{{resolve:ssm:/medreport/mistral_api_key}}'
+        NVIDIA_API_KEY: !Sub '{{resolve:ssm:/medreport/nvidia_api_key}}'
+        OPENROUTER_API_KEY: !Sub '{{resolve:ssm:/medreport/openrouter_api_key}}'
+        GEMINI_API_KEY: !Sub '{{resolve:ssm:/medreport/gemini_api_key}}'
+        COHERE_API_KEY: !Sub '{{resolve:ssm:/medreport/cohere_api_key}}'
+        CEREBRAS_API_KEY: !Sub '{{resolve:ssm:/medreport/cerebras_api_key}}'
+        CLOUDFLARE_API_KEY: !Sub '{{resolve:ssm:/medreport/cloudflare_api_key}}'
+        CLOUDFLARE_ACCOUNT_ID: !Sub '{{resolve:ssm:/medreport/cloudflare_account_id}}'
 
 Resources:
   MedReportFunction:
@@ -54,6 +54,11 @@ Resources:
     Properties:
       PackageType: Image
       ImageUri: IMAGE_URI_PLACEHOLDER  # e.g. <account-id>.dkr.ecr.eu-west-2.amazonaws.com/medreport-ai-backend-aws:latest
+      Architectures:
+        - arm64  # Must match what push_to_ecr.sh actually builds. The build
+                 # host is Apple Silicon, so arm64 is the native (fast,
+                 # unemulated) target; Lambda's default is x86_64, and a
+                 # mismatch here fails at function-create time.
       FunctionUrlConfig:
         AuthType: NONE  # No per-request AWS auth -- matches this app's
                          # existing design (no login system); CORS is opened
