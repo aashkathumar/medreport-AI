@@ -29,16 +29,26 @@ systems using AI-assisted technologies" dissertation project.
 
 ## Stack
 
-- **Backend**: FastAPI (Python), deployed to AWS Lambda via Mangum + API Gateway
-- **Frontend**: Streamlit
-- **LLM**: pluggable providers with an automatic fallback chain -- Groq,
-  Google Gemini, Mistral and OpenRouter. Text and vision use *separate*
-  chains, because only Gemini and OpenRouter accept image payloads
+- **Backend**: FastAPI (Python), deployed to AWS Lambda as a **container
+  image** via Mangum, behind a **Lambda Function URL** -- not API Gateway,
+  which caps requests at 29 seconds and would cut off longer report
+  generations.
+- **Frontend**: Streamlit, on a separate EC2 instance (it needs a persistent
+  process, which Lambda's execution model does not provide).
+- **LLM**: pluggable providers with an automatic fallback chain spanning
+  eight providers -- Groq, Mistral, NVIDIA, OpenRouter, Google Gemini,
+  Cohere, Cloudflare Workers AI, plus a Cerebras scaffold. Text and vision
+  use *separate* chains, because only some providers accept image payloads
   (see `TEXT_FALLBACK_CHAIN` / `VISION_FALLBACK_CHAIN` in `.env`).
 - **RAG**: local FAISS vector index (cosine similarity) over NHS UK and NIH
   MedlinePlus reference text scraped by `data/build_rag_chunks.py`
   (sentence-transformers embeddings)
-- **Storage**: local JSON files in dev / DynamoDB + S3 in production
+- **Storage**: **none server-side.** Reports are held only in the frontend's
+  Streamlit session and are gone when the session ends. This was a
+  deliberate change made in response to ethics review of the project's
+  original storage design, not an oversight. (`backend/app/db/` still
+  contains the superseded DynamoDB/S3 modules; they are dead code, imported
+  by nothing.)
 - **IaC**: AWS SAM (`template.yaml`)
 
 ## Local setup (do this first)
@@ -55,10 +65,11 @@ pip install -r requirements.txt
 ### 2. Configure environment
 
 ```bash
-cp .env
+cp .env.example .env
 ```
 
-and leave the AWS fields blank -- local mode needs no AWS account at all.
+Then edit `.env` and fill in at least one provider API key. Leave the AWS
+fields blank -- local mode needs no AWS account at all.
 
 ### 3. Build the RAG index (one-off, run from repo root)
 
@@ -119,7 +130,8 @@ python tests/generate_sample_pdf.py
 python tests/smoke_test.py
 ```
 
-This calls the real LLM (Haiku by default) end-to-end -- confirm you see
+This calls a real LLM end-to-end, using whichever provider is first in the
+fallback chain that has a working key -- confirm you see
 `Explained N results` in the output.
 
 ### 8. Run the frontend
@@ -135,13 +147,105 @@ streamlit run main.py
 Open **http://localhost:8501**, upload `backend/tests/sample_report.pdf`
 (or a real anonymised report), and click through Upload -> Results -> History.
 
-## Cloud deployment (later step)
+## Cloud deployment (AWS)
 
-`sentence-transformers` is too large for a standard zip-based Lambda
-deployment. Before running `sam deploy`, this project needs to move to a
-container-image Lambda (Dockerfile-based) -- see the accompanying setup
-notes for that step. Do not attempt `sam deploy` until local testing above
-is fully working.
+The system is deployed as two independent services: the backend as a Lambda
+container image behind a Function URL, the frontend as a Streamlit process
+on an EC2 instance. `sentence-transformers` and `faiss-cpu` are far too
+large for a zip-based Lambda package, which is why the backend is packaged
+as a container image rather than deployed with a plain `sam deploy`.
+
+### Prerequisites
+
+```bash
+brew install awscli aws-sam-cli bash   # bash 5.x: the scripts use
+                                        # associative arrays, which the
+                                        # bash 3.2 macOS ships cannot do
+aws configure                           # region: eu-west-2, output: json
+```
+
+Docker Desktop must be running, and `backend/.env` must contain the
+provider API keys (they are read from there, never committed).
+
+### Deploy, in order
+
+```bash
+./deploy/push_to_ecr.sh            # build the image and push it to ECR
+/opt/homebrew/bin/bash deploy/create_ssm_params.sh   # keys -> SSM Parameter Store
+./deploy/deploy_lambda.sh          # create/update the Lambda stack
+```
+
+Each script hands off to the next through `deploy/.image_uri` and
+`deploy/.function_url` (both gitignored), so no URI or URL is ever
+copy-pasted by hand. `deploy_lambda.sh` prints the live Function URL when it
+finishes.
+
+### Then the frontend
+
+```bash
+aws ec2 create-key-pair --key-name medreport-key --region eu-west-2 \
+  --query 'KeyMaterial' --output text > ~/medreport-key.pem
+chmod 400 ~/medreport-key.pem
+
+./deploy/launch_ec2.sh medreport-key                       # launch instance
+./deploy/provision_frontend.sh <public-ip> ~/medreport-key.pem   # install + start
+```
+
+`provision_frontend.sh` copies the frontend over SSH rather than having the
+instance clone it, because **this repository is private** and a bare EC2
+instance holds no GitHub credentials. Passing a token or deploy key through
+user-data would be worse: user-data is readable from instance metadata and
+is echoed into the console log.
+
+It also wires `MEDREPORT_API_URL` to the deployed Function URL and installs
+a systemd unit, so the app restarts on failure and survives a reboot.
+
+### Redeploying after a change
+
+- **Backend change**: `./deploy/push_to_ecr.sh` then `./deploy/deploy_lambda.sh`.
+- **Frontend change**: `./deploy/provision_frontend.sh <ip> ~/medreport-key.pem`
+  (deploying the backend does not touch the frontend).
+
+### Operating the deployed app
+
+```bash
+# restart the frontend
+ssh -i ~/medreport-key.pem ec2-user@<ip> 'sudo systemctl restart medreport-frontend.service'
+
+# check status and logs
+ssh -i ~/medreport-key.pem ec2-user@<ip> \
+  'sudo systemctl status medreport-frontend.service --no-pager && sudo tail -30 /var/log/medreport-frontend.log'
+
+# check the backend is alive (also warms it -- see below)
+curl -s <function-url>api/v1/health
+```
+
+**Cold starts.** The first backend request after ~5-15 minutes idle takes
+roughly 56 seconds, because a 3.42GB image has to load the embedding model
+and FAISS index. Warm requests are ~0.1s. Hit `/api/v1/health` before any
+demonstration so the first real upload does not absorb that delay. The
+frontend has no cold start -- only the page's first call to the backend does.
+
+### Deployment gotchas worth knowing
+
+These all cost real debugging time on the first live deploy, and none of
+them can surface in local testing:
+
+- **Lambda rejects OCI image manifests.** Current Docker builds emit an OCI
+  index with provenance attestations by default; Lambda requires Docker
+  Manifest V2 Schema 2. `push_to_ecr.sh` therefore builds with
+  `--provenance=false --sbom=false --output type=image,oci-mediatypes=false`.
+- **Architecture must match.** Building on Apple Silicon produces an arm64
+  image, while Lambda defaults to x86_64, so `template.yaml` declares
+  `Architectures: [arm64]` explicitly.
+- **`ssm-secure` does not work in Lambda environment variables.**
+  CloudFormation supports that dynamic reference in some resources but not
+  this one, so the parameters are plain `String` and resolved with
+  `{{resolve:ssm:...}}`.
+- **Filename casing matters on Linux.** macOS is case-insensitive, so
+  `App.py` and `app.py` resolve identically there and diverge on EC2.
+- **macOS `mktemp` does not randomise** a template when a suffix follows the
+  `X`s, so the deploy scripts use `$$` instead.
 
 ## Project structure
 
@@ -156,21 +260,25 @@ backend/
       reference_db.py      NHS/NIH structured reference lookups
       pdf_parser.py         Extracts test values from uploaded PDFs
       rag_service.py        FAISS-based semantic retrieval
-      llm_service.py        Claude API calls (RAG-grounded prompts)
+      llm_service.py        Multi-provider LLM calls (RAG-grounded prompts)
       pdf_generator.py      Builds the downloadable PDF report
-    db/
-      __init__.py           Switches between local_storage and dynamo/s3
-      local_storage.py      Dev-mode storage (JSON files on disk)
-      dynamo.py              Production DynamoDB storage
-      s3.py                   Production S3 storage
+    db/                     DEAD CODE -- superseded by the ethics-driven
+                            removal of server-side storage; imported by
+                            nothing. Kept only as a record of the original
+                            design.
   tests/                    Unit + smoke tests
   requirements.txt
   .env.example
-  
+
 
 frontend/
-  app.py                    Streamlit entry point
-  pages/                    Upload / Results / History pages
+  main.py                   Streamlit entry point -- run THIS, not app.py
+  app.py                    Home page (upload + profile)
+  pages/
+    2_results.py            Results page
+    3_History.py            Session history page
+  theme.py                  Styling and logo injection
+  assets/                   Sidebar / icon logos
   requirements.txt
 
 data/
@@ -181,5 +289,15 @@ data/
 scripts/
   build_rag_index.py         Builds the FAISS index from rag_chunks.json
 
+deploy/
+  push_to_ecr.sh             Build the Lambda image and push it to ECR
+  create_ssm_params.sh       Load .env keys into SSM Parameter Store
+  deploy_lambda.sh           Deploy/update the Lambda stack via SAM
+  launch_ec2.sh              Launch the frontend EC2 instance
+  provision_frontend.sh      Copy + start the frontend over SSH
+  ec2_userdata.sh            First-boot script used by launch_ec2.sh
+
+Dockerfile.aws               Lambda container image (AWS)
+Dockerfile.gcp               Cloud Run image (GCP comparison build)
 template.yaml                AWS SAM infrastructure-as-code
 ```

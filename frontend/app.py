@@ -246,7 +246,7 @@ elif status == "done":
         col_a, col_b, _spacer = st.columns([1, 1.4, 3])
         with col_a:
             if st.button("View results", type="primary"):
-                st.switch_page("pages/2_Results.py")
+                st.switch_page("pages/2_results.py")
         with col_b:
             if st.button("Upload another report"):
                 st.session_state.upload_status = None
@@ -470,7 +470,7 @@ with st.expander("Enter test values manually", expanded=bool(st.session_state.ma
             ack_col1, ack_col2 = st.columns(2)
             with ack_col1:
                 if st.button("View results", type="primary", key="view_results_manual_btn"):
-                    st.switch_page("pages/2_Results.py")
+                    st.switch_page("pages/2_results.py")
             with ack_col2:
                 # BUG FOUND: there was no way to start a fresh set of manual
                 # entries after explaining one -- the old entries just sat

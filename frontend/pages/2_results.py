@@ -148,4 +148,4 @@ if st.button("Explain another report"):
     st.session_state.manual_results = []
     st.session_state.pdf_bytes = None
     st.session_state.pdf_bytes_report_id = None
-    st.switch_page("App.py")
+    st.switch_page("app.py")

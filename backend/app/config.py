@@ -189,12 +189,14 @@ class Settings(BaseSettings):
     # ignored, so this can never be the reason a request has nowhere to go.
     llm_circuit_cooldown_sec: float = 60.0
 
-    # --- AWS / storage -----------------------------------------------------
+    # --- AWS ---------------------------------------------------------------
+    # No storage settings here any more: server-side report persistence was
+    # removed following ethics review, and the S3/DynamoDB modules that used
+    # these were deleted along with it. Reports exist only in the frontend's
+    # Streamlit session for the life of that session.
     aws_region: str = "eu-west-2"
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
-    s3_bucket_name: str = "medreport-ai-bucket"
-    dynamodb_table_name: str = "medreport-reports"
     app_env: str = "development"
 
     @staticmethod

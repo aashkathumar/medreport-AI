@@ -27,4 +27,4 @@ for item in reports:
         st.write(data.get("overall_summary", ""))
         if st.button("Load this report", key=item["report_id"]):
             st.session_state.report = data
-            st.switch_page("pages/2_Results.py")
+            st.switch_page("pages/2_results.py")
