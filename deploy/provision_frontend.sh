@@ -39,7 +39,10 @@ for _ in $(seq 1 30); do
 done
 
 echo "Copying frontend..."
-ssh "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" 'rm -rf ~/frontend && mkdir -p ~/frontend'
+# sudo rm, not plain rm: the running systemd service writes __pycache__
+# as root, so a re-run by the SSH user alone fails with "Permission
+# denied" trying to delete those files.
+ssh "${SSH_OPTS[@]}" "${SSH_USER}@${HOST}" 'sudo rm -rf ~/frontend && mkdir -p ~/frontend'
 # tar piped over ssh rather than rsync: Amazon Linux 2023 does not ship
 # rsync, and rsync must exist on BOTH ends, so the first attempt failed
 # with "rsync: command not found" on the remote side. tar and ssh are

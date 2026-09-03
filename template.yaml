@@ -38,6 +38,14 @@ Globals:
       Variables:
         AWS_REGION_NAME: eu-west-2
         APP_ENV: production
+        # BUG FOUND on first real report upload: sentence-transformers
+        # defaulted to caching the embedding model under $HOME, which
+        # Lambda resolves to a path it does not allow writes to -- only
+        # /tmp is writable. The actual fix is baking the model into the
+        # image at build time (Dockerfile.aws sets HF_HOME there); this
+        # HOME override is a general safety net for any other library
+        # that assumes a writable home directory.
+        HOME: /tmp
         GROQ_API_KEY: !Sub '{{resolve:ssm:/medreport/groq_api_key}}'
         MISTRAL_API_KEY: !Sub '{{resolve:ssm:/medreport/mistral_api_key}}'
         NVIDIA_API_KEY: !Sub '{{resolve:ssm:/medreport/nvidia_api_key}}'

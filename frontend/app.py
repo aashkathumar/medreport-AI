@@ -191,6 +191,20 @@ def _run_upload(file_bytes, file_name, user_id, age, sex, diet_type):
             st.session_state.upload_status = "done"
         elif resp.status_code == 422:
             st.session_state.upload_status = "manual_needed"
+        elif resp.status_code in (502, 413) or "413" in resp.text[:50]:
+            # BUG FOUND live: a file over Lambda's 6MB request limit is
+            # rejected by AWS's own infrastructure, never reaching this
+            # app's code, and the response body is raw gateway HTML
+            # ("<html><title>502 Bad Gateway</title>...") rather than
+            # anything this app wrote -- showing it verbatim looked like
+            # the app itself was broken. maxUploadSize in config.toml
+            # should stop this at the picker, but this is the honest
+            # message for the rare case something still gets through.
+            st.session_state.upload_error = (
+                "This file is too large for the backend to accept (limit ~5MB). "
+                "Please try a smaller PDF."
+            )
+            st.session_state.upload_status = "error"
         else:
             st.session_state.upload_error = f"Error {resp.status_code}: {resp.text[:300]}"
             st.session_state.upload_status = "error"
@@ -270,7 +284,9 @@ if status not in ("running", "done"):
     # report" above, which already exists specifically to get back here.
     uploaded = st.file_uploader(
         "Choose your report PDF", type=["pdf"],
-        help="Your file is processed transiently and never stored raw.",
+        help="Your file is processed transiently and never stored raw. "
+             "Files must be under 5MB -- larger files are rejected by the "
+             "cloud backend before they can be processed.",
     )
 
 if uploaded and status != "running":
@@ -325,6 +341,20 @@ def _run_manual_explain(manual_results, user_id, age, sex, diet_type):
                 "report_data": data,
             })
             st.session_state.upload_status = "done"
+        elif resp.status_code in (502, 413) or "413" in resp.text[:50]:
+            # BUG FOUND live: a file over Lambda's 6MB request limit is
+            # rejected by AWS's own infrastructure, never reaching this
+            # app's code, and the response body is raw gateway HTML
+            # ("<html><title>502 Bad Gateway</title>...") rather than
+            # anything this app wrote -- showing it verbatim looked like
+            # the app itself was broken. maxUploadSize in config.toml
+            # should stop this at the picker, but this is the honest
+            # message for the rare case something still gets through.
+            st.session_state.upload_error = (
+                "This file is too large for the backend to accept (limit ~5MB). "
+                "Please try a smaller PDF."
+            )
+            st.session_state.upload_status = "error"
         else:
             st.session_state.upload_error = f"Error {resp.status_code}: {resp.text[:300]}"
             st.session_state.upload_status = "error"

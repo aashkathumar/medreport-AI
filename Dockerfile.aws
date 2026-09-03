@@ -41,6 +41,26 @@ COPY backend/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -r /tmp/requirements.txt
 
+# BUG FOUND on the first real (post-deploy) report upload: the embedding
+# model was neither baked into the image nor pointed at a writable
+# directory, so at cold start it tried to download from Hugging Face and
+# cache the result under $HOME, which Lambda does not allow writes to
+# (only /tmp is writable there). Every cold start therefore failed with
+# "RAG unavailable -- OSError: Read-only file system", degrading every
+# test to the ungrounded GP-referral fallback -- safe (nothing false was
+# ever shown), but nothing explained properly either. It was also very
+# likely a contributor to intermittent cold-start init timeouts: Lambda's
+# init phase has a hard, non-configurable 10-second cap, and a network
+# download plus a failing write both competed for that same window.
+#
+# Baking the model in at build time removes both the network dependency
+# and the write requirement from the cold-start path entirely -- the
+# model is already sitting on disk, read-only, exactly where
+# sentence-transformers expects to find it.
+ENV HF_HOME=/opt/hf_home
+ENV SENTENCE_TRANSFORMERS_HOME=/opt/hf_home
+RUN python3.12 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', device='cpu')"
+
 # Preserves the SAME relative layout the app already assumes when run
 # locally (`uvicorn app.main:app --app-dir backend`) -- data/ sits as a
 # sibling of backend/, which is what reference_db.py's _DATA_DIR expects

@@ -9,6 +9,16 @@ secondaryBackgroundColor = "#FFF6E8"
 textColor = "#232946"
 font = "sans serif"
 
+[server]
+# BUG FOUND live: this was left at Streamlit's own default (200), which
+# has nothing to do with what the backend can actually accept. AWS Lambda
+# Function URLs hard-cap the request payload at 6MB regardless of this
+# setting -- a larger file is rejected by AWS's own infrastructure before
+# the app's code ever runs, surfacing as a raw "502 Bad Gateway" with no
+# useful message. Capped here to 5MB to leave margin for multipart
+# overhead, and the uploader's help text below states the real limit.
+maxUploadSize = 5
+
 [client]
 # Hides the native "Deploy" button and reduces the top-right kebab menu to
 # almost nothing (no Rerun/Settings/Print/Record/Clear cache) -- those are
