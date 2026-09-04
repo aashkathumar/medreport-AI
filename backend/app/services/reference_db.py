@@ -197,6 +197,21 @@ GROUNDING_ALIASES = {
     "SGOT_SGPT_RATIO": "AST",
     "TC_HDL_RATIO": "CHOL",
     "90_DAY_AVERAGE_BLOOD_GLUCOSE": "HBA1C",
+    # BUG FOUND (PK0016.pdf, live testing): "Urinary RBC" (a microscopy
+    # count, cells/HPF) and "Blood [In Urine]" (a dipstick result) are
+    # DIFFERENT rows on the SAME report -- confirmed directly against the
+    # source PDF, not assumed -- so this cannot be an ALIAS_MAP identity
+    # merge (that caused the SGOT/SGPT collision documented above: two
+    # distinct rows would silently share one cached explanation). Kept as
+    # its own synthetic id (URINARY_RBC, via canonicalize_test_name's
+    # urine/RBC guard) and redirected here to the same corpus page
+    # SPECIMEN_GROUNDING_ALIASES already established as correct for the
+    # identical concept under a different lab's naming ("Red Cells" +
+    # urine specimen tag -> URINE_BLOOD). Without this, the synthetic id
+    # had no corpus match and retrieval fell back to the blood RBC
+    # count/indices pages, describing systemic blood-cell production
+    # instead of red blood cells found in urine.
+    "URINARY_RBC": "URINE_BLOOD",
 }
 
 # BUG FOUND (Sterling Accuris report, urinalysis panel): "Bilirubin" and
@@ -430,6 +445,26 @@ _BRACKETED_SPECIMEN_NOTE = re.compile(
 )
 
 
+# BUG FOUND (PK0016.pdf, live testing): stripping "urinary"/"urine" as a
+# non-distinguishing qualifier is correct for most tests ("Urinary pH" and
+# "pH" really are the same concept) but wrong for a small set of short,
+# genuinely ambiguous abbreviations where the specimen IS the distinguishing
+# fact, not noise -- "RBC" means a systemic blood erythrocyte count on a
+# CBC, and something entirely different (red cells visible in urine
+# microscopy, i.e. haematuria) on a urinalysis. Collapsing "Urinary RBC" to
+# bare "RBC" fed the RAG retrieval query (rag_service.retrieve_context,
+# which appends "({test_id}) blood test result meaning" whenever a test_id
+# is present, and separately boosts any corpus chunk tagged with that id)
+# a blood-context id for a urine test, so the explanation shown described
+# systemic blood-cell production instead of blood/cells in urine -- the
+# same class of collision Section 2.5 already guards against for
+# LLM-generated aliases (e.g. "AST"), just reached here via qualifier
+# stripping instead. "WBC" carries the identical ambiguity for the same
+# reason and is guarded pre-emptively, not because it was observed to fail.
+_AMBIGUOUS_WITHOUT_SPECIMEN = {"RBC", "WBC"}
+_URINE_QUALIFIER_RE = re.compile(r"\b(urine|urinary)\b", re.IGNORECASE)
+
+
 def canonicalize_test_name(raw_name: str) -> str:
     """Produces a stable synthetic test_id for tests with no known alias,
     so the same analyte extracted with slightly different wording across
@@ -440,10 +475,15 @@ def canonicalize_test_name(raw_name: str) -> str:
     if not raw_name or not isinstance(raw_name, str):
         return "UNKNOWN_TEST"
     cleaned = _BRACKETED_SPECIMEN_NOTE.sub(" ", raw_name)
-    cleaned = _NON_DISTINGUISHING_QUALIFIERS.sub(" ", cleaned)
-    cleaned = re.sub(r"[^A-Za-z0-9]+", "_", cleaned.upper()).strip("_")
-    cleaned = re.sub(r"_+", "_", cleaned)
-    return cleaned or "UNKNOWN_TEST"
+    stripped_further = _NON_DISTINGUISHING_QUALIFIERS.sub(" ", cleaned)
+    candidate = re.sub(r"[^A-Za-z0-9]+", "_", stripped_further.upper()).strip("_")
+    candidate = re.sub(r"_+", "_", candidate)
+    if candidate in _AMBIGUOUS_WITHOUT_SPECIMEN and _URINE_QUALIFIER_RE.search(raw_name):
+        # Keep the urine qualifier instead of stripping it, so this stays a
+        # distinct id from the blood-context "RBC"/"WBC".
+        cleaned = re.sub(r"[^A-Za-z0-9]+", "_", cleaned.upper()).strip("_")
+        return re.sub(r"_+", "_", cleaned) or "UNKNOWN_TEST"
+    return candidate or "UNKNOWN_TEST"
 
 
 # --------------------------------------------------------------------------
