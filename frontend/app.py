@@ -497,7 +497,11 @@ with st.expander("Enter test values manually", expanded=bool(st.session_state.ma
             and (st.session_state.get("report") or {}).get("parse_method") == "manual"
         ):
             st.success("Report explained!")
-            ack_col1, ack_col2 = st.columns(2)
+            # BUG FOUND: st.columns(2) stretches across the full page width,
+            # same issue already fixed for the PDF-upload path's equivalent
+            # button pair above -- just never applied here too. Narrow
+            # columns, sized to the buttons, keep the pair grouped together.
+            ack_col1, ack_col2, _ack_spacer = st.columns([1, 1.6, 3])
             with ack_col1:
                 if st.button("View results", type="primary", key="view_results_manual_btn"):
                     st.switch_page("pages/2_results.py")
