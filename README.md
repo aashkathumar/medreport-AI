@@ -153,7 +153,7 @@ Open **http://localhost:8501**, upload `backend/tests/sample_report.pdf`
 
 | | |
 |---|---|
-| Application (use this) | http://16.61.145.167 |
+| Application (use this) | http://18.132.96.4 |
 | Backend API | `https://6mqiiylbn5lxs7sr62yw2hf4pe0gthzx.lambda-url.eu-west-2.on.aws/` |
 
 The backend is serverless, so the first request after ~15 minutes idle takes
