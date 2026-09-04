@@ -509,7 +509,26 @@ _NON_TEST_NAME_RE = re.compile(
     # be). Anchored with $ so this only excludes the bare label -- a
     # genuinely different, clinically real test that happens to include the
     # word "quantity" as part of a longer name is not touched.
-    r"(urine\s+)?quantity\s*$)",
+    r"(urine\s+)?quantity\s*$|"
+    # BUG FOUND (live testing, an image-embedded report table that forced
+    # the OCR/vision fallback): with no clean text layer to anchor on, that
+    # tier also picked up the surrounding letterhead, field labels and
+    # column headers as if they were result rows -- "Age", "Registered On",
+    # "PID", even the table's own "Investigation / Result / Reference
+    # Value" header line, each landed as its own "test" with a fabricated
+    # numeric-looking value and a GP-referral fallback ("Could you explain
+    # what my Age test involves?"). Technically safe (no clinical content
+    # was invented), but visibly wrong. All bare-labelled with $ so only
+    # the administrative field itself is excluded -- a real test name that
+    # happens to contain one of these words elsewhere is untouched.
+    r"age|sex|gender|pid|patient\s*(id|name|location)?\s*$|"
+    r"client(\s*(name|code|address|add|no))?\s*$|"
+    r"(registered|collected|reported|generated|approved|received|ordered)\s*"
+    r"(on|by|location)?\s*$|"
+    r"sample\s*collection(\s*by)?\s*$|"
+    r"ref(erence)?\s*(id\s*#?\d*|by|doctor)?\s*$|"
+    r"mrn|uhid|visit\s*type\s*$|"
+    r"investigation\s+result(\s+reference\s*value)?\s*$)",
     re.IGNORECASE,
 )
 
@@ -718,10 +737,26 @@ def _clean_categorical_value(value: str) -> str:
     return value.strip().strip('"\'').strip()
 
 
+# BUG FOUND (live testing, an image-embedded report with no clean text
+# layer): the numeric check below accepted a digit string of any length,
+# so an OCR/vision misread that glued unrelated digits together (a
+# barcode, a phone number, page furniture) produced values like
+# "6012345678910912345678" -- syntactically a number, but astronomically
+# larger than any real lab result. No real test (including high-range
+# viral-load-style results, which can reach the billions) approaches this
+# bound, so it exists purely to catch garbage, not to constrain real data.
+_MAX_PLAUSIBLE_RESULT_MAGNITUDE = 1e15
+
+
 def _is_result_value(value: str, raw_name: str = "") -> bool:
     if not value:
         return False
     if re.fullmatch(r"-?\d+\.?\d*", value):
+        try:
+            if abs(float(value)) > _MAX_PLAUSIBLE_RESULT_MAGNITUDE:
+                return False
+        except ValueError:
+            return False
         return True
     if _SMALL_COUNT_RANGE_RE.match(value):
         return True
