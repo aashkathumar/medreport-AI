@@ -10,7 +10,7 @@ inject_theme()
 st.title("Your Results")
 
 if st.session_state.get("upload_status") == "running":
-    st.info("This may take a moment for larger reports -- please wait. This page will update automatically once it's ready.")
+    st.info("This may take a moment for larger reports, please wait. This page will update automatically once it's ready.")
     time.sleep(2)
     st.rerun()
 
@@ -40,7 +40,7 @@ if report.get("summary_degraded"):
     st.warning(
         "The automated summary could not be generated for this report "
         "(no AI provider was reachable). The text below is a generic "
-        "placeholder -- please rely on the individual results."
+        "placeholder. Please rely on the individual results."
     )
 st.write(report.get("overall_summary", ""))
 
@@ -79,7 +79,7 @@ st.subheader("Results Explained")
 # test is and general guidance for that test category. `value`/`unit` are
 # still shown (what was extracted from the report), just not judged.
 for r in report.get("explained_results", []):
-    with st.expander(f"**{r['raw_name']}** -- {r['value']} {r['unit']}"):
+    with st.expander(f"**{r['raw_name']}** · {r['value']} {r['unit']}"):
         if r.get("test_id") in degraded_ids:
             st.error("No automated explanation was generated for this result.")
         elif r.get("test_id") in ungrounded_ids:

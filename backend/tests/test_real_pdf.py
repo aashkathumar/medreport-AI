@@ -11,11 +11,11 @@ def test_real_pdf():
     pdf_path = os.path.join(os.path.dirname(__file__), "sterling-accuris-pathology-sample-report-unlocked.pdf")
     
     if not os.path.exists(pdf_path):
-        print(f"❌ File not found: {pdf_path}")
+        print(f"File not found: {pdf_path}")
         print("Please place your PDF in the tests/ directory!")
         return
 
-    print(f"📄 Testing PDF: {pdf_path}")
+    print(f"Testing PDF: {pdf_path}")
     
     with open(pdf_path, "rb") as f:
         response = requests.post(
@@ -37,7 +37,7 @@ def test_real_pdf():
     
     if response.status_code == 200:
         data = response.json()
-        print("✅ SUCCESS!")
+        print("SUCCESS!")
         print(f"• Parse Method Used: {data.get('parse_method')}")
         print(f"• Report ID: {data.get('report_id')}")
         print(f"• Extracted & Explained Tests ({len(data.get('explained_results', []))} total):")
@@ -45,7 +45,7 @@ def test_real_pdf():
             print(f"  - {item.get('raw_name')}: {item.get('value')} {item.get('unit')} ({item.get('status')})")
         print(f"\nOverall Summary: {data.get('overall_summary')}")
     else:
-        print("❌ FAILED!")
+        print("FAILED!")
         print(f"Response Error: {response.text}")
 
 if __name__ == "__main__":

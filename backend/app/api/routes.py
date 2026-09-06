@@ -307,5 +307,5 @@ async def download_pdf(data: dict):
             },
         )
     except Exception as e:
-        print(f"❌ PDF Generation Error: {e}")
+        print(f"PDF Generation Error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")

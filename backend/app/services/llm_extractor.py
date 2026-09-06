@@ -81,7 +81,7 @@ def pdf_to_base64_images(pdf_bytes: bytes, dpi: int = RENDER_DPI) -> list[str]:
             images.append(f"data:image/png;base64,{b64_str}")
         return images
     except Exception as e:
-        print(f"⚠️ PyMuPDF image conversion failed: {e}")
+        print(f"PyMuPDF image conversion failed: {e}")
         return []
 
 
@@ -165,7 +165,7 @@ def extract_with_llm_text(text: str, provider: str = None) -> list[dict]:
         results = data.get("results", []) if isinstance(data, dict) else []
         return dedupe_results(_format_extracted_results(results))
     except Exception as e:
-        print(f"⚠️ Tier 3 (LLM Text) failed: {e}.")
+        print(f"Tier 3 (LLM Text) failed: {e}.")
         return []
 
 

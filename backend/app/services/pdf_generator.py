@@ -81,7 +81,7 @@ def generate_report_pdf(
 
     story.append(Paragraph(f"<b>Top lifestyle change:</b> {_sanitize(top_lifestyle_change)}", body_s))
     story.append(HRFlowable(width="100%", thickness=0.5, color=LGREY, spaceAfter=6))
-    story.append(Paragraph("Your Results -- Explained", head_s))
+    story.append(Paragraph("Your Results, Explained", head_s))
 
     # ETHICS CONSTRAINT (Chris Clarke): no status/range on ExplainedResult
     # here (see schemas.py) -- the banner shows the raw extracted value only

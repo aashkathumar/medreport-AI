@@ -5,7 +5,7 @@ inject_theme()
 st.title("Your Report History")
 st.caption(
     "Reports generated during this browser session only. Nothing is stored "
-    "on the server -- close this tab and this list is gone."
+    "on the server. Close this tab and this list is gone."
 )
 
 reports = st.session_state.get("session_reports", [])
@@ -23,7 +23,7 @@ for item in reports:
     # count alone, not a high/low tally.
     count = len(data.get("explained_results", []))
 
-    with st.expander(f"{item['time_label']} -- {count} test(s) explained"):
+    with st.expander(f"{item['time_label']} · {count} test(s) explained"):
         st.write(data.get("overall_summary", ""))
         if st.button("Load this report", key=item["report_id"]):
             st.session_state.report = data

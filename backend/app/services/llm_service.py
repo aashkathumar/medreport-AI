@@ -1146,7 +1146,7 @@ def generate_summary(
         "overall_summary": (
             f"This report explains {count} {plural} from your results. Each explanation "
             "below describes what the test measures and general, NHS/NIH-grounded habits "
-            "that support that area of health -- it does not interpret your specific "
+            "that support that area of health. It does not interpret your specific "
             "values, so please review your actual results with your GP."
         ),
         "top_gp_topics": [r.gp_question for r in explained_results[:3] if r.gp_question] or ["Routine follow-up"],

@@ -76,7 +76,7 @@ def verify_results_against_source(results: List[dict], source_text: str,
         # Failing closed is the correct behaviour for a health tool: the
         # caller falls through to the deterministic tier and, if that finds
         # nothing either, the user is told to use manual entry.
-        print("⚠️ No source text to verify LLM extraction against "
+        print("No source text to verify LLM extraction against "
               "(no text layer and no OCR output) -- rejecting unverifiable "
               "results rather than trusting them.")
         return []
@@ -118,7 +118,7 @@ def verify_results_against_source(results: List[dict], source_text: str,
     if dropped:
         names = [d.get("raw_name") for d in dropped][:10]
         suffix = " ..." if len(dropped) > 10 else ""
-        print(f"⚠️ Dropped {len(dropped)} unverified/likely-hallucinated result(s): {names}{suffix}")
+        print(f"Dropped {len(dropped)} unverified/likely-hallucinated result(s): {names}{suffix}")
 
     return verified
 

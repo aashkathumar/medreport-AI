@@ -75,7 +75,7 @@ with st.sidebar:
     # CHANGED: "(this session only)" moved out of the label and into a
     # caption below the field, on request.
     st.text_input("Name", key="user_id")
-    st.caption("Noted only for this session -- not saved anywhere.")
+    st.caption("Noted only for this session, not saved anywhere.")
 
 # Original illustration (not traced from any reference image) in the same
 # visual language as the moodboard the user shared -- a card, floating
@@ -148,7 +148,7 @@ st.markdown(
     </div>
     <div style="color: #FFF3DE; font-size: 1.02rem; line-height: 1.55;">
       Upload your blood test or urinalysis report and receive plain-English
-      explanations with personalised lifestyle guidance -- grounded only in
+      explanations with personalised lifestyle guidance, grounded only in
       NHS UK and NIH MedlinePlus sources.
     </div>
   </div>
@@ -220,7 +220,7 @@ status = st.session_state.upload_status
 
 if status == "running":
     st.info(
-        "This may take a moment for larger reports -- please wait. Your report is "
+        "This may take a moment for larger reports, please wait. Your report is "
         "being generated in the background, so feel free to switch tabs; it keeps "
         "processing and will be ready here (and on the Results page) when done."
     )
@@ -285,7 +285,7 @@ if status not in ("running", "done"):
     uploaded = st.file_uploader(
         "Choose your report PDF", type=["pdf"],
         help="Your file is processed transiently and never stored raw. "
-             "Files must be under 5MB -- larger files are rejected by the "
+             "Files must be under 5MB. Larger files are rejected by the "
              "cloud backend before they can be processed.",
     )
 
@@ -295,7 +295,7 @@ if uploaded and status != "running":
         f"Profile: Age {profile.get('age', 30)}, "
         f"{profile.get('sex','unknown')}, {profile.get('diet_type','omnivore')} diet"
     )
-    st.caption("This may take a moment for larger reports -- please wait.")
+    st.caption("This may take a moment for larger reports, please wait.")
     if st.button("Explain my results", type="primary"):
         st.session_state.upload_status = "running"
         st.session_state.upload_error = None
