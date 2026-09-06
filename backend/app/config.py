@@ -13,13 +13,10 @@ class Settings(BaseSettings):
     # Free key from https://build.nvidia.com (any model -> "Get API Key").
     nvidia_api_key: str = ""
     # Scaffolded ahead of a key -- empty is fine, provider_has_key() skips it
-    # in the chain until CEREBRAS_API_KEY is set. Get one from
-    # https://cloud.cerebras.ai.
-    cerebras_api_key: str = ""
-    # Scaffolded ahead of a key, same pattern as cerebras above. Get one
-    # from https://dashboard.cohere.com/api-keys (trial key, no card).
+    # in the chain until COHERE_API_KEY is set. Get one from
+    # https://dashboard.cohere.com/api-keys (trial key, no card).
     cohere_api_key: str = ""
-    # Scaffolded ahead of a key, same pattern as cerebras/cohere above.
+    # Scaffolded ahead of a key, same pattern as cohere above.
     # Workers AI needs BOTH a token (Account > Workers AI > Read + Edit,
     # from dash.cloudflare.com) AND the account ID shown on that same page
     # -- unlike the other providers, the account ID is part of the request
@@ -67,15 +64,6 @@ class Settings(BaseSettings):
     nvidia_model: str = "meta/llama-3.3-70b-instruct"
     nvidia_vision_model: str = "meta/llama-3.2-90b-vision-instruct"
 
-    # Text-only (no vision endpoint on Cerebras's inference API). Confirmed
-    # from the account's own Limits page (not a guess): "gpt-oss-120b" is
-    # tagged Production; "gemma-4-31b" is tagged Preview -- default to the
-    # production one. Both get their own separate quota (5 req/min, 2400/day,
-    # 90K tokens/min each per the same page), so gemma-4-31b is added as a
-    # second chain entry below rather than only living here as an unused
-    # alternative -- still unverified by an actual generation call, since no
-    # key is configured yet to test with.
-    cerebras_model: str = "gpt-oss-120b"
     # No default picked yet -- find one via live testing once
     # COHERE_API_KEY is set.
     cohere_model: str = ""
