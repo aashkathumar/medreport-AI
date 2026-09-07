@@ -515,7 +515,7 @@ def _strip_footer(text: str) -> str:
     return _FOOTER_RE.sub("", text or "").strip()
 
 
-# BUG FOUND (my_real_report.pdf, Epithelial Cells / Urinary RBC): pdfplumber
+# BUG FOUND (a specimen report, Epithelial Cells / Urinary RBC): pdfplumber
 # joins a multi-line table cell with an embedded "\n", and on this report's
 # layout the unit cell for these rows picked up a single stray character from
 _GLUED_UNIT_PREFIX_RE = re.compile(r"^[A-Za-z]\s*\n\s*")

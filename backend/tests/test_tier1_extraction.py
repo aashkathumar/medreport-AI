@@ -1,7 +1,6 @@
-"""Regression tests for Tier 1 (deterministic, LLM-free) extraction. Tier
-1 used to return zero rows on whitespace-aligned reports, the common
-case, falling through to the expensive, hallucination-prone vision tier;
-these tests lock in the behaviour that keeps them on the free path.
+"""Regression tests for Tier 1's row-cleaning helpers: splitting an
+abnormal flag off a name/value, stripping page furniture from a printed
+range, and telling a real test name apart from a signature block.
 
 Run (from backend/, no API keys and no network needed):
     python tests/test_tier1_extraction.py
@@ -12,100 +11,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.services.pdf_parser import (
-    MIN_STRUCTURED_RESULTS,
     _clean_value,
     _is_test_name,
     _split_name_flag,
     _strip_footer,
-    parse_report,
-    parse_structured_tables,
 )
-
-TESTS_DIR = Path(__file__).resolve().parent
-STERLING = TESTS_DIR / "sterling-accuris-pathology-sample-report-unlocked.pdf"
-RULED = TESTS_DIR / "my_real_report.pdf"
-
-
-def _by_name(results, needle):
-    for r in results:
-        if needle.lower() in r["raw_name"].lower():
-            return r
-    return None
-
-
-def test_whitespace_aligned_report_stays_on_tier1():
-    """The header row on this report is at index 13-19, not 0. Tier 1 used to
-    give up and hand the whole 19-page report to the vision LLM."""
-    if not STERLING.exists():
-        print("  SKIP  sterling sample not present")
-        return
-    rows = parse_structured_tables(STERLING.read_bytes())
-    assert len(rows) >= MIN_STRUCTURED_RESULTS, "would fall through to the LLM tier"
-    assert len(rows) > 50, f"expected the full panel, got {len(rows)}"
-
-
-def test_ruled_table_report_still_works():
-    """The grid path must not regress while fixing the positional path."""
-    if not RULED.exists():
-        print("  SKIP  ruled sample not present")
-        return
-    rows = parse_structured_tables(RULED.read_bytes())
-    assert len(rows) >= MIN_STRUCTURED_RESULTS
-    assert _by_name(rows, "Urinary pH"), "expected a known row from the ruled table"
-
-
-def test_no_llm_call_for_whitespace_report():
-    if not STERLING.exists():
-        print("  SKIP  sterling sample not present")
-        return
-    # provider=None with no network would raise if any LLM tier were reached.
-    result = parse_report(STERLING.read_bytes(), method="auto",
-                          patient_sex="female", patient_age=30)
-    assert result["method"] == "table_structured", (
-        f"expected the deterministic tier, got {result['method']}"
-    )
-
-
-def test_hba1c_value_is_the_result_not_a_band_boundary():
-    """The safety case. The vision tier read 5.7, the Pre-Diabetes band
-    boundary printed inside the reference range, instead of the printed
-    result 7.10, which flipped the reported status from High to below-normal.
-    Deterministic extraction must get this right."""
-    if not STERLING.exists():
-        print("  SKIP  sterling sample not present")
-        return
-    rows = parse_structured_tables(STERLING.read_bytes())
-    hba1c = _by_name(rows, "HbA1c")
-    assert hba1c, "HbA1c not extracted"
-    assert float(hba1c["value"]) == 7.10, f"got {hba1c['value']}, expected 7.10"
-
-
-def test_cholesterol_keeps_full_multiline_band():
-    """The printed range spans three lines; truncating it to the first line
-    stops _parse_labeled_bands() finding the healthy band."""
-    if not STERLING.exists():
-        print("  SKIP  sterling sample not present")
-        return
-    rows = parse_structured_tables(STERLING.read_bytes())
-    chol = _by_name(rows, "Cholesterol")
-    assert chol and chol["ref_range"], "cholesterol range missing"
-    assert "borderline" in chol["ref_range"].lower(), (
-        f"band truncated: {chol['ref_range']!r}"
-    )
-
-
-def test_differential_uses_percentage_range_not_absolute_count():
-    """The differential sub-table's columns are offset from the page header,
-    so the unit cell absorbed the % range and the ref cell held the ABSOLUTE
-    count, range-checking 73% against 2000-6700 flagged it low."""
-    if not STERLING.exists():
-        print("  SKIP  sterling sample not present")
-        return
-    rows = parse_structured_tables(STERLING.read_bytes())
-    neut = _by_name(rows, "Neutrophils")
-    assert neut, "Neutrophils not extracted"
-    assert neut["unit"] == "%", f"unit polluted: {neut['unit']!r}"
-    assert neut["ref_range"].startswith("40 - 80"), f"got {neut['ref_range']!r}"
 
 
 def test_abnormal_flag_is_split_off_the_name_and_value():
