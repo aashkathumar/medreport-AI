@@ -7,23 +7,9 @@ from app.services.reference_db import resolve_test_id, finalize_result, dedupe_r
 from app.services.llm_extractor import extract_holistic
 
 # --------------------------------------------------------------------------
-# NEW: source-verification guardrail against LLM hallucination
+# Guardrail against LLM hallucination: without this, the vision/text tier
+# could fabricate entire test panels never in the source document at all.
 # --------------------------------------------------------------------------
-# Observed in production: on reports with no ruled tables (so Tier 1 never
-# fires), the vision/text LLM tier can fabricate entire test panels that
-# were never in the source document at all (confirmed by diffing an actual
-# app output against its real 19-page source: ~100+ tests were returned for
-# a report that genuinely contains ~40, including full tumor-marker and
-# autoantibody panels the source never mentions). This is a correctness/
-# safety issue, not just a missing-reference-range issue - fix it before
-# broadening explanation coverage.
-#
-# This check is deliberately cheap and deterministic (no extra LLM call):
-# every extracted test name's substantive words must actually appear in the
-# pre-extracted document text, and any numeric value must appear verbatim
-# somewhere in the source too. It will not catch a subtly-wrong number
-# attached to a real test name, but it reliably kills wholesale fabrication.
-
 _STRUCTURAL_STOPWORDS = {
     "test", "tests", "result", "results", "unit", "units", "biological",
     "reference", "interval", "range", "normal", "value", "values", "method",
@@ -63,21 +49,11 @@ def verify_results_against_source(results: List[dict], source_text: str,
     same line for some other reason, but that's a much narrower gap than
     before."""
     if not source_text:
-        # CHANGED: this used to return `results` unverified.
-        #
-        # An empty source text means the PDF had no usable text layer AND OCR
-        # produced nothing -- i.e. a scanned image. That is precisely the case
-        # that gets routed to the vision LLM, and precisely where wholesale
-        # fabrication is most likely. Passing results through unverified meant
-        # the guardrail switched itself off exactly when it was needed, and a
-        # fabricated panel reached the patient-facing explanation with nothing
-        # standing between.
-        #
-        # Failing closed is the correct behaviour for a health tool: the
-        # caller falls through to the deterministic tier and, if that finds
-        # nothing either, the user is told to use manual entry.
+        # CHANGED: this used to return `results` unverified. An empty source
+        # text means the PDF had no usable text layer AND OCR produced
+        # nothing, i.e.
         print("No source text to verify LLM extraction against "
-              "(no text layer and no OCR output) -- rejecting unverifiable "
+              "(no text layer and no OCR output), rejecting unverifiable "
               "results rather than trusting them.")
         return []
 
@@ -192,23 +168,15 @@ def _resolve_or_synthesize_id(raw_name: str) -> Tuple[str, bool]:
     test_id = resolve_test_id(raw_name)
     if test_id:
         return test_id, True
-    # CHANGED: previously slugged the full raw name verbatim, so
-    # "Creatinine" and "Creatinine (24 hour)" got different synthetic IDs
-    # and never deduped against each other. canonicalize_test_name() strips
-    # only non-distinguishing sample/method/timeframe qualifiers - see
-    # reference_db.py for what it keeps vs strips.
+    # CHANGED: previously slugged the raw name verbatim, so "Creatinine" and
+    # "Creatinine (24 hour)" never deduped, this strips non-distinguishing
+    # qualifiers first (see reference_db.py for what it keeps vs strips).
     return canonicalize_test_name(raw_name), False
 
 
 # --------------------------------------------------------------------------
-# NEW: Tier 1 - deterministic, LLM-free extraction from real detected tables
+# Tier 1: deterministic, LLM-free extraction from real detected tables.
 # --------------------------------------------------------------------------
-# This existed before only as a last-resort fallback (via markdown-ified
-# pipe-row regex parsing in _extract_from_text). Promoted to Tier 1 and
-# rewritten to map columns by their HEADER labels (Test/Result/Unit/
-# Reference), so ref_range is captured directly from the document with zero
-# LLM calls whenever the report has a real ruled/structured table - which
-# is the majority case for digital lab report PDFs.
 
 def _extract_tables_with_pages(file_bytes: bytes) -> Tuple[List[Tuple[int, list, Optional[str]]], set]:
     """Extracts RULED tables (pdfplumber's default "lines" strategy).
@@ -242,24 +210,9 @@ def _extract_tables_with_pages(file_bytes: bytes) -> Tuple[List[Tuple[int, list,
                 if not tables:
                     continue
                 specimen = _page_specimen(page.extract_text() or "")
-                # BUG FOUND (LabReport.pdf, a QuantiFERON-TB panel): pdfplumber
-                # sometimes splits what is visually ONE table into separate
-                # table objects -- confirmed directly on this report, where the
-                # header row (['Test Name', 'Result', 'Bio. Ref. Range', 'Unit',
-                # 'Method']) came back as its own single-row table, immediately
-                # followed by a second table holding all 5 data rows and no
-                # header at all. _table_to_structured_rows requires the header
-                # to be IN the table it's given (it discards a table entirely
-                # if _find_header_row can't find one), so the header-only table
-                # was too short to survive on its own (len < 2) and the
-                # data-only table was discarded for having no header -- between
-                # the two, every real row was lost, with nothing to fall back
-                # on since a ruled table WAS technically found (so the page
-                # never reached the columnar/positional extractor either).
-                # Fix: if a table is a lone header row, don't emit it as its
-                # own table -- carry it forward and prepend it to the very
-                # next table on the same page instead, which is where a
-                # split-off header's data almost always actually lives.
+                # BUG FOUND (QuantiFERON-TB panel): pdfplumber sometimes
+                # splits one visual table into a header-only table plus a
+                # separate data table with no header, losing every row.
                 pending_header = None
                 for table in tables:
                     if not table:
@@ -277,15 +230,8 @@ def _extract_tables_with_pages(file_bytes: bytes) -> Tuple[List[Tuple[int, list,
     return out, ruled_pages
 
 
-# BUG FOUND (Sterling Accuris report, Bilirubin / Red Cells on the urinalysis
-# page): the same analyte name is used for both a blood test and a urine
-# test ("Bilirubin" appears on the liver panel AND the urinalysis panel;
-# "Red Cells" means RBC count in blood but cell count in urine microscopy).
-# Nothing tracked which SECTION of the report a row was extracted from, so
-# grounding treated every "Bilirubin" identically and always cited the blood
-# page - producing "No bilirubin was detected in your blood" as the
-# explanation for a urine dipstick result. Detecting a urinalysis section
-# heading per page and tagging rows with it lets grounding disambiguate.
+# BUG FOUND: "Bilirubin"/"Red Cells" appear on both a blood panel and the
+# urinalysis panel; ungrounded, every occurrence cited the blood page.
 _URINE_SECTION_RE = re.compile(
     r"\b(urinalysis|urine\s+(examination|analysis|routine|r\s*/\s*e)|"
     r"routine\s+urine\s+examination|"
@@ -385,23 +331,8 @@ def _table_to_structured_rows(table: list, page_num: int, specimen: Optional[str
 
 
 # --------------------------------------------------------------------------
-# NEW: positional (columnar) extraction for whitespace-aligned reports
+# Positional (columnar) extraction for whitespace-aligned reports.
 # --------------------------------------------------------------------------
-# Most real lab PDFs align their columns with whitespace and have no ruled
-# grid. pdfplumber's "text" table strategy does fire on those pages, but it
-# infers a grid for the WHOLE page and shreds words across cells, so the
-# reconstructed rows are unusable ("LABOR","AT","ORY TEST REP","ORT").
-#
-# This works from word positions instead: find the header line, read the x
-# offset of each column label from it, then assign every word on the
-# following lines to a column by its horizontal midpoint. That is how the
-# columns are actually defined on the page, so it survives fragmentation.
-#
-# Measured on the 19-page Sterling Accuris report: 0 rows from the old Tier 1
-# vs 61 rows here, with zero LLM calls - including the HbA1c value (7.10)
-# that the vision tier misread as 5.7 (a reference-band boundary), which had
-# flipped the reported status from High to "below normal".
-
 _ROW_TOLERANCE = 2.5      # points; words within this vertical span are one line
 _COL_TOLERANCE = 6.0      # points of slack when assigning a word to a column
 
@@ -494,33 +425,17 @@ _NON_TEST_NAME_RE = re.compile(
     r"technologist|signature|verified|authoris|authoriz|approved|"
     r"end of report|interpretation|note|comment|remark|"
     # BUG FOUND (LabReport.pdf, QuantiFERON-TB panel): "Final Result" ->
-    # "Negative" was extracted as its own test row and, having no NHS/NIH
-    # page of its own (it isn't an analyte, it's the report's own summary
-    # verdict over the three real TB Nil/Antigen/Ag-Minus-Nil tube results
-    # already on the same report), fell through to "not covered" -- a
-    # technically-honest fallback for a row that should never have been
-    # treated as a testable result in the first place. Same class of
-    # extraction error as the doctor-name lines this regex already filters,
-    # just an interpretive verdict instead of a signature block.
+    # "Negative" was extracted as its own test row and, having no NHS/NIH page
+    # of its own (it isn't an analyte, it's the report's own summary verdict
     r"final result|overall result|overall interpretation|test result|"
-    # "(Urine )?Quantity" alone -- specimen volume submitted for testing,
-    # not a diagnostic measurement with health information behind it (there
-    # is no "what your urine quantity means" NHS/NIH page, nor should there
-    # be). Anchored with $ so this only excludes the bare label -- a
-    # genuinely different, clinically real test that happens to include the
-    # word "quantity" as part of a longer name is not touched.
+    # "(Urine )?Quantity" alone, specimen volume submitted for testing, not a
+    # diagnostic measurement with health information behind it (there is no
+    # "what your urine quantity means" NHS/NIH page, nor should there be).
     r"(urine\s+)?quantity\s*$|"
-    # BUG FOUND (live testing, an image-embedded report table that forced
+    # BUG FOUND (live testing, an image-embedded report table that forced the
     # the OCR/vision fallback): with no clean text layer to anchor on, that
-    # tier also picked up the surrounding letterhead, field labels and
-    # column headers as if they were result rows -- "Age", "Registered On",
-    # "PID", even the table's own "Investigation / Result / Reference
-    # Value" header line, each landed as its own "test" with a fabricated
-    # numeric-looking value and a GP-referral fallback ("Could you explain
-    # what my Age test involves?"). Technically safe (no clinical content
-    # was invented), but visibly wrong. All bare-labelled with $ so only
-    # the administrative field itself is excluded -- a real test name that
-    # happens to contain one of these words elsewhere is untouched.
+    # tier also picked up the surrounding letterhead, field labels and column
+    # headers as if they were result rows -- "Age", "Registered On", "PID",
     r"age|sex|gender|pid|patient\s*(id|name|location)?\s*$|"
     r"client(\s*(name|code|address|add|no))?\s*$|"
     r"(registered|collected|reported|generated|approved|received|ordered)\s*"
@@ -543,26 +458,9 @@ def _is_test_name(name: str) -> bool:
     return len(name.split()) <= 8
 
 
-# BUG FOUND (PK0016.pdf, "P-LCC" / "Neutrophil-Lymphocyte Ratio (NLR)"):
-# the same glued-multi-line-cell mechanism documented above for units
-# (_GLUED_UNIT_PREFIX_RE) also corrupts the NAME column -- a stray
-# character from an unrelated line above (a footnote/superscript marker)
-# lands glued to the front of the real name with a literal embedded "\n"
-# ("a\nP-LCC", "S\nNeutrophil-Lymphocyte Ratio (NLR)"). Both survived
-# _is_test_name() as one string, since str.split() with no args already
-# splits on "\n" too, so the combined blob still read as "<=8 words with 2
-# consecutive letters" -- this went undetected until the ungrounded list
-# was inspected and the embedded newline noticed in how it printed.
-#
-# Deliberately narrow, same discipline as _GLUED_UNIT_PREFIX_RE: only
-# strips a leading line that FAILS _is_test_name() on its own AND only
-# when what's left DOES pass it. A raw_name with no embedded newline at
-# all (every normal single-line name -- "AST", "Sodium", "ALT", ...) is
-# never touched, since the while-loop's condition never triggers. A
-# genuinely real multi-line name whose first line already reads as a
-# valid test name on its own is also left completely alone -- the check
-# only fires on a leading fragment the system's own existing rules
-# already consider noise, never on something that looks like a real name.
+# BUG FOUND (PK0016.pdf, "P-LCC" / "Neutrophil-Lymphocyte Ratio (NLR)"): the
+# same glued-multi-line-cell mechanism documented above for units
+# (_GLUED_UNIT_PREFIX_RE) also corrupts the NAME column -- a stray character
 def _clean_glued_name_prefix(raw_name: str) -> str:
     while "\n" in raw_name:
         first, _, rest = raw_name.partition("\n")
@@ -590,10 +488,8 @@ def _build_row(raw_name: str, value: str, unit: str, ref_range: str,
     if not _is_test_name(raw_name) or not _is_result_value(value, raw_name):
         return None
 
-    # Convert the accepted-but-not-plain-numeric forms into their final
-    # stored value: a small count range takes its upper (conservative)
-    # bound; a categorical result (e.g. ABO Type) drops its surrounding
-    # quotes.
+    # Convert the accepted-but-not-plain-numeric forms into their final stored
+    # value: a small count range takes its upper (conservative) bound;
     range_match = _SMALL_COUNT_RANGE_RE.match(value)
     if range_match:
         value = range_match.group(2)
@@ -603,11 +499,9 @@ def _build_row(raw_name: str, value: str, unit: str, ref_range: str,
     unit = _clean_unit(_strip_footer(unit))
     ref_range = _strip_footer(ref_range)
 
-    # Recover the range when the sub-table's columns are offset from the
+    # Recover the range when the sub-table's columns are offset from the page
     # page header and the unit cell has swallowed it (differential counts:
-    # unit="% 40 - 80", ref="7716 /cmm 2000 - 6700"). Without this the row
-    # is range-checked against the ABSOLUTE count and a perfectly normal
-    # Neutrophils 73% gets flagged low.
+    # unit="% 40 - 80", ref="7716 /cmm 2000 - 6700").
     unit_match = _UNIT_WITH_RANGE_RE.match(unit)
     if unit_match:
         unit = unit_match.group("unit")
@@ -652,21 +546,7 @@ def _strip_footer(text: str) -> str:
 
 # BUG FOUND (my_real_report.pdf, Epithelial Cells / Urinary RBC): pdfplumber
 # joins a multi-line table cell with an embedded "\n", and on this report's
-# layout the unit cell for these rows picked up a single stray character
-# from an unrelated line above ("e\n/HPF", "l\n/HPF", "p\n/HPF" instead of
-# plain "/HPF"). Confirmed via raw word extraction: those letters sit a full
-# line-height above the row they ended up glued to.
-#
-# WIDENED (PK0016.pdf, Blood Urea / MCV): originally required the glued
-# fragment to be immediately followed by "/", assuming every affected unit
-# looked like "/HPF" -- but the same glue mechanism also hit non-slash
-# units on this report ("a\nmg/dL", "e\nfL", confirmed via raw extraction).
-# Dropped the "/"-lookahead requirement -- still only ever strips a LONE
-# leading letter immediately before an embedded newline, nothing else. A
-# real unit never starts with a single bare letter directly followed by a
-# line break (every real unit here is multi-character -- "mg/dL", "fL",
-# "mmol/L" -- or has no embedded newline at all), so this can't mistake a
-# genuine unit for the glued artifact.
+# layout the unit cell for these rows picked up a single stray character from
 _GLUED_UNIT_PREFIX_RE = re.compile(r"^[A-Za-z]\s*\n\s*")
 
 
@@ -674,20 +554,13 @@ def _clean_unit(unit: str) -> str:
     return _GLUED_UNIT_PREFIX_RE.sub("", unit or "")
 
 
-# BUG FOUND (Sterling Accuris sample report, WBC Count): the printed value
-# "H10570" has no space between the abnormal-flag letter and the number
-# (unlike "H 168.0" elsewhere, which _FLAG_RE already handles), because
-# pdfplumber extracted "H10570" as a single word with no internal gap. That
-# left the value as the non-numeric string "H10570", which failed
-# _is_result_value() and silently dropped the row - the single most
-# clinically notable CBC abnormality in the report (an "H"-flagged WBC
-# count) never reached the patient.
+# BUG FOUND: "H10570" (flag glued to the number, no space) failed the
+# numeric check and silently dropped an abnormal WBC count.
 _GLUED_FLAG_RE = re.compile(r"^([HL])(\d)")
 
 # BUG FOUND (same report, Urine Glucose): the printed value "Present (+)"
-# carries a trailing qualitative marker that isn't in _QUALITATIVE_VALUES,
-# so the exact-match check failed and an abnormal urinalysis result (glucose
-# in urine, not normally present) was silently dropped.
+# carries a trailing qualitative marker that isn't in _QUALITATIVE_VALUES, so
+# the exact-match check failed and an abnormal urinalysis result (glucose in
 _TRAILING_QUALITATIVE_MARKER_RE = re.compile(r"\s*[\(\[][+-][\)\]]\s*$")
 
 
@@ -718,18 +591,14 @@ def _split_name_flag(name: str) -> tuple:
     return name, None
 
 
-# BUG FOUND (same report, Pus Cells / Epithelial Cells): microscopy fields
-# are conventionally printed as a small count range ("1-2 /hpf"), not a
-# single number, so these rows failed the single-number check and were
-# dropped. Takes the upper bound (the conservative reading) as the numeric
-# value, since flag_result() needs a single number to compare against the
-# reference range.
+# BUG FOUND (same report, Pus Cells / Epithelial Cells): microscopy fields are
+# conventionally printed as a small count range ("1-2 /hpf"), not a single
+# number, so these rows failed the single-number check and were dropped.
 _SMALL_COUNT_RANGE_RE = re.compile(r"^(\d+)\s*-\s*(\d+)$")
 
 # BUG FOUND (same report, ABO Type): printed as a quoted categorical letter
-# ('"A"'), which is neither numeric nor in _QUALITATIVE_VALUES, so the row
-# was dropped. Blood-group test names are categorical by nature (there is no
-# numeric result), so any short alphabetic token is accepted for them.
+# ('"A"'), which is neither numeric nor in _QUALITATIVE_VALUES, so the row was
+# dropped.
 _CATEGORICAL_TEST_NAME_RE = re.compile(r"\b(abo|blood\s*group|rh\s*\(?d\)?)\b", re.IGNORECASE)
 
 
@@ -737,14 +606,9 @@ def _clean_categorical_value(value: str) -> str:
     return value.strip().strip('"\'').strip()
 
 
-# BUG FOUND (live testing, an image-embedded report with no clean text
-# layer): the numeric check below accepted a digit string of any length,
-# so an OCR/vision misread that glued unrelated digits together (a
-# barcode, a phone number, page furniture) produced values like
-# "6012345678910912345678" -- syntactically a number, but astronomically
-# larger than any real lab result. No real test (including high-range
-# viral-load-style results, which can reach the billions) approaches this
-# bound, so it exists purely to catch garbage, not to constrain real data.
+# BUG FOUND (live testing, an image-embedded report table that forced the
+# OCR/vision fallback): with no clean text layer to anchor on, that tier also
+# picked up the surrounding letterhead, field labels and column headers as if
 _MAX_PLAUSIBLE_RESULT_MAGNITUDE = 1e15
 
 
@@ -799,11 +663,9 @@ def _columnar_rows_for_page(page, page_num: int) -> List[dict]:
         if built:
             rows.append(built)
         elif rows and not cells.get("result", "").strip():
-            # Continuation line of a multi-line reference band, e.g.
-            # Cholesterol's "Desirable: <200 / Borderline High: 200-239 /
-            # High: >240" printed across three lines. Without this the band
-            # is truncated to its first line and _parse_labeled_bands() can't
-            # find the healthy band.
+            # Continuation of a multi-line reference band (e.g. Cholesterol's
+            # bands printed across three lines), without this it truncates
+            # to the first line and the healthy band can't be found.
             continuation = _strip_footer(ref_range)
             # Only genuine band text - a bare footer or a method annotation is
             # not part of the range.

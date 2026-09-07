@@ -24,16 +24,9 @@ class TestResult(BaseModel):
 
 
 class ExplainedResult(BaseModel):
-    # ETHICS CONSTRAINT (Chris Clarke, project ethics reviewer): the
-    # patient-facing output on this branch never compares a result against
-    # a reference range or states what a specific value/status means
-    # clinically -- that reads as clinical decision support, not viable for
-    # an MSc-scope project. Accordingly `status`, `normal_range_min`,
-    # `normal_range_max`, and `what_your_result_means` are deliberately NOT
-    # patient-facing fields here (unlike feature/developv4.1, where they are
-    # correct and intentional). `value`/`unit` are kept only so the patient
-    # can see what was extracted from their report, not to support a
-    # normal/high/low judgement about it.
+    # ETHICS CONSTRAINT: no status/range fields here, this type never states
+    # what a reading means clinically. value/unit are kept only so the
+    # patient can see what was extracted, not to support a judgement on it.
     test_id: str
     raw_name: str
     value: Union[str, float]

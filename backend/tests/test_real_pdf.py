@@ -29,7 +29,7 @@ def test_real_pdf():
                 "parse_method": "auto"  # Can also try "regex" or "llm" if auto falls back
             },
             # Full pipeline: batched LLM calls per test plus a summary pass,
-            # legitimately ~5-6 minutes -- see smoke_test.py for the same reasoning.
+            # legitimately ~5-6 minutes, see smoke_test.py for the same reasoning.
             timeout=600,
         )
 

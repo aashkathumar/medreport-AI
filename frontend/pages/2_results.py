@@ -19,12 +19,8 @@ if not report:
     st.warning("No report loaded. Please upload a PDF first.")
     st.stop()
 
-# ETHICS CONSTRAINT (Chris Clarke): explained_results no longer carry a
-# status/normal-high-low classification at all on this branch (see
-# backend/app/models/schemas.py) -- so there is nothing to count here beyond
-# how many tests were explained vs. left to a GP referral for lack of
-# NHS/NIH coverage, which is a source-coverage fact, not a clinical judgement
-# about any patient's value.
+# ETHICS CONSTRAINT: no status classification here, just how many tests
+# were explained vs. left to a GP referral for lack of source coverage.
 results = report.get("explained_results", [])
 
 m1, m2 = st.columns(2)
@@ -73,11 +69,8 @@ with col2:
 st.divider()
 st.subheader("Results Explained")
 
-# ETHICS CONSTRAINT (Chris Clarke): no status emoji/badge, no range gauge, no
-# "Your result:" section, no normal-range caption anywhere below -- this
-# branch never states what a specific value/status means, only what the
-# test is and general guidance for that test category. `value`/`unit` are
-# still shown (what was extracted from the report), just not judged.
+# ETHICS CONSTRAINT: no status badge or range gauge, this only shows what
+# the test is and general guidance, reading/unit shown but never judged.
 for r in report.get("explained_results", []):
     with st.expander(f"**{r['raw_name']}** · {r['value']} {r['unit']}"):
         if r.get("test_id") in degraded_ids:
@@ -103,16 +96,7 @@ st.divider()
 st.subheader("Download Your Report")
 
 # BUG FOUND: st.download_button used to live INSIDE the `if
-# st.button("Generate...")` block. st.button only reads True for the one
-# script-run right after it's clicked -- clicking the download button
-# itself triggers a full rerun, st.button(...) evaluates False again on
-# that rerun, and the whole block (download button included) stops
-# rendering. Not an intentional "acknowledge the download" behaviour --
-# the button was just an accidental casualty of Streamlit's rerun model.
-# Fixed by generating once, caching the bytes in session_state (tagged
-# with the report_id so a stale PDF from a PREVIOUS report can't be
-# offered for the current one), and rendering the download button
-# unconditionally from that cache so it survives reruns/re-downloads.
+# st.button("Generate...")` block.
 current_report_id = report.get("report_id")
 cached_pdf = st.session_state.get("pdf_bytes")
 cached_pdf_report_id = st.session_state.get("pdf_bytes_report_id")
@@ -138,10 +122,8 @@ if cached_pdf is not None and cached_pdf_report_id == current_report_id:
 
 st.divider()
 # A second, always-available entry point back to Home for starting a fresh
-# report -- not a replacement for the "View results" / "Enter a new set of
+# report, not a replacement for the "View results" / "Enter a new set of
 # tests" pairing on the Home page itself (kept as-is), but this is the point
-# where a user has just finished reviewing/downloading a report and may want
-# to explain a different one next, without scrolling all the way back up.
 if st.button("Explain another report"):
     st.session_state.upload_status = None
     st.session_state.upload_error = None

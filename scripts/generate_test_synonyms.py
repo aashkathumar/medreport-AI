@@ -4,13 +4,13 @@ abbreviations for each RAG-covered test_id, so a report using a phrasing
 we haven't manually encountered yet still resolves on the FIRST try
 instead of only after a human notices and patches ALIAS_MAP by hand.
 
-This does NOT touch what gets shown to a patient -- it only feeds
+This does NOT touch what gets shown to a patient, it only feeds
 reference_db.ALIAS_MAP, the internal raw-label -> canonical-test_id lookup
 used before any grounding or explanation happens. The NHS UK / NIH
 MedlinePlus-only rule governs explanation CONTENT; naming/synonym lookup is
 plumbing, not content, so this is a different, permitted use of the LLM.
 
-Safety, not just convenience -- a naive "what else is X called" pass risks
+Safety, not just convenience, a naive "what else is X called" pass risks
 conflating genuinely different tests (Ferritin and Iron are related but
 NOT synonyms; naively merging them would misroute a report). Two
 independent checks guard against that:
@@ -18,7 +18,7 @@ independent checks guard against that:
      curated or a prior run) that already points to a DIFFERENT test_id --
      never overwrite, only fill genuine gaps.
   2. A candidate is dropped if it was ALSO generated as a synonym for some
-     OTHER test_id in the SAME run -- an LLM proposing the same label for
+     OTHER test_id in the SAME run, an LLM proposing the same label for
      two different tests is exactly the ambiguous case to refuse, not guess
      on. Only names that resolve to exactly one test_id survive.
 
@@ -40,7 +40,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_ROOT / "backend"))
-os.chdir(_ROOT / "backend")  # see precompute_what_it_measures.py -- .env loads relative to cwd
+os.chdir(_ROOT / "backend")  # see precompute_what_it_measures.py, .env loads relative to cwd
 
 from app.services.llm_service import call_with_fallback  # noqa: E402
 from app.services.reference_db import ALIAS_MAP  # noqa: E402
@@ -51,7 +51,7 @@ _OUT_FILE = _DATA_DIR / "llm_generated_aliases.json"
 SYSTEM = (
     "You identify alternate real-world names for a laboratory test, as they "
     "would literally appear as a field label on a lab report. Only list "
-    "names/abbreviations that refer to the EXACT SAME test -- never a "
+    "names/abbreviations that refer to the EXACT SAME test, never a "
     "related-but-different test, a component of a panel, or a different "
     "measurement unit of the same analyte. If you are not certain something "
     "is a true synonym, omit it. Respond ONLY with valid JSON: "
@@ -147,10 +147,10 @@ def main() -> int:
         accepted[key] = test_id
 
     print(f"\n{len(accepted)} aliases accepted")
-    print(f"{len(dropped_ambiguous)} dropped -- same name proposed for multiple different tests:")
+    print(f"{len(dropped_ambiguous)} dropped, same name proposed for multiple different tests:")
     for key, ids in dropped_ambiguous[:20]:
         print(f"   {key!r} -> {ids}")
-    print(f"{len(dropped_collision)} dropped -- collided with an existing DIFFERENT alias:")
+    print(f"{len(dropped_collision)} dropped, collided with an existing DIFFERENT alias:")
     for key, existing_id, proposed_id in dropped_collision[:20]:
         print(f"   {key!r}: existing={existing_id!r} vs proposed={proposed_id!r}")
 

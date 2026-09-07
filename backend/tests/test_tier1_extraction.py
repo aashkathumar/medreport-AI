@@ -1,8 +1,8 @@
 """
 Regression tests for Tier 1 (deterministic, LLM-free) extraction.
 
-Tier 1 previously returned ZERO rows on whitespace-aligned lab reports -- the
-common case -- so those reports fell through to the vision LLM, which is both
+Tier 1 previously returned ZERO rows on whitespace-aligned lab reports, the
+common case, so those reports fell through to the vision LLM, which is both
 the expensive tier and the one that hallucinates. These tests lock in the
 behaviour that keeps them on the free, deterministic path.
 
@@ -70,8 +70,8 @@ def test_no_llm_call_for_whitespace_report():
 
 
 def test_hba1c_value_is_the_result_not_a_band_boundary():
-    """The safety case. The vision tier read 5.7 -- the Pre-Diabetes band
-    boundary printed inside the reference range -- instead of the printed
+    """The safety case. The vision tier read 5.7, the Pre-Diabetes band
+    boundary printed inside the reference range, instead of the printed
     result 7.10, which flipped the reported status from High to below-normal.
     Deterministic extraction must get this right."""
     if not STERLING.exists():
@@ -100,7 +100,7 @@ def test_cholesterol_keeps_full_multiline_band():
 def test_differential_uses_percentage_range_not_absolute_count():
     """The differential sub-table's columns are offset from the page header,
     so the unit cell absorbed the % range and the ref cell held the ABSOLUTE
-    count -- range-checking 73% against 2000-6700 flagged it low."""
+    count, range-checking 73% against 2000-6700 flagged it low."""
     if not STERLING.exists():
         print("  SKIP  sterling sample not present")
         return

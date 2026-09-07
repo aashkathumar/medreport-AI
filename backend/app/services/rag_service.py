@@ -3,7 +3,7 @@ FAISS-based semantic retrieval over the NHS UK / NIH MedlinePlus corpus
 built by data/build_rag_chunks.py + scripts/build_rag_index.py.
 
 CHANGED (retrieval was returning nothing at all, permanently):
-  * _DATA_DIR resolved to backend/data, which does not exist -- the index
+  * _DATA_DIR resolved to backend/data, which does not exist, the index
     lives in the repo-root data/. _load() returned early, _INDEX stayed None,
     and retrieve_context() returned [] for every query ever made, silently.
     reference_db.py uses one more .parent and resolved correctly, which is
@@ -29,14 +29,8 @@ from urllib.parse import urlparse
 # The only sources this system is permitted to ground explanations in.
 ALLOWED_SOURCE_DOMAINS = {"www.nhs.uk", "nhs.uk", "medlineplus.gov"}
 
-# IMPORT ORDER IS LOAD-BEARING -- do not let an import sorter reshuffle these.
-# faiss-cpu and torch each ship their own OpenMP runtime. On macOS, importing
-# faiss FIRST (as this module used to) makes the process abort with SIGSEGV
-# inside SentenceTransformer.encode() -- reproduced here as a hard crash, not
-# an exception, so it takes the whole worker down with no traceback. Importing
-# torch first makes it load its runtime before faiss registers a second one.
-# KMP_DUPLICATE_LIB_OK is the documented escape hatch for the same clash on
-# machines where the ordering alone isn't enough.
+# IMPORT ORDER IS LOAD-BEARING, do not let an import sorter reshuffle these.
+# faiss-cpu and torch each ship their own OpenMP runtime.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import torch  # noqa: E402  (must precede faiss)
 from sentence_transformers import SentenceTransformer  # noqa: E402
@@ -46,19 +40,11 @@ _DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
 
 EMBED_MODEL = "all-MiniLM-L6-v2"
 
-# Cosine-similarity floor. Below this a passage is off-topic and is worse than
-# no grounding at all -- an unrelated passage would invite the model to explain
-# the wrong biomarker.
-#
-# BUG FOUND: at 0.30 this let genuinely uncovered instrument-internal values
-# (P2 Peak / P3 Peak from an HbA1c HPLC assay, not real NHS/NIH-covered
-# tests) match onto the *nearest available* chunk in the corpus - Prostate-
-# Specific Antigen content, at 0.45-0.48 similarity - which is a coincidental
-# nearest-neighbour, not a real topical match. The patient-facing output
-# confidently explained P2/P3 Peak as PSA. Measured against this corpus:
-# genuinely correct matches score 0.63-0.79 (Hemoglobin, Creatinine, HbA1c,
-# Cholesterol, Foetal Hb); the false PSA/MPV matches for P2 Peak/P3 Peak/Ao
-# score 0.45-0.48. 0.55 sits in the gap between those two clusters.
+# Cosine-similarity floor.
+
+# internal values (P2 Peak / P3 Peak from an HbA1c HPLC assay, not real
+# NHS/NIH-covered tests) match onto the *nearest available* chunk in the
+# corpus - Prostate- Specific Antigen content, at 0.45-0.48 similarity - which
 MIN_SIMILARITY = 0.55
 
 # Ranking bonus for a chunk scraped from a page that explicitly covers this
@@ -101,10 +87,7 @@ def _load() -> None:
             _CHUNKS = json.loads(chunks_path.read_text())
 
             # Project constraint: explanations are grounded EXCLUSIVELY in NHS
-            # UK and NIH MedlinePlus. Enforce that at load time rather than
-            # trusting the scraper -- if a future edit to SOURCES adds another
-            # site, the corpus is rejected instead of quietly widening what
-            # the system is allowed to say.
+            # UK and NIH MedlinePlus.
             foreign = sorted({
                 urlparse(c.get("url", "")).netloc
                 for c in _CHUNKS
@@ -122,7 +105,7 @@ def _load() -> None:
 
             if _INDEX.ntotal != len(_CHUNKS):
                 # A stale index paired with a rebuilt corpus returns text for
-                # the wrong test -- refuse rather than ground on mismatched IDs.
+                # the wrong test, refuse rather than ground on mismatched IDs.
                 _LOAD_ERROR = (
                     f"RAG index is stale: {_INDEX.ntotal} vectors vs "
                     f"{len(_CHUNKS)} chunks. Re-run scripts/build_rag_index.py."
@@ -140,7 +123,7 @@ def _load() -> None:
             _LOADED = True
 
     if _LOAD_ERROR:
-        print(f"RAG unavailable -- {_LOAD_ERROR}")
+        print(f"RAG unavailable, {_LOAD_ERROR}")
 
 
 def index_health() -> dict[str, Any]:
@@ -160,13 +143,10 @@ def index_health() -> dict[str, Any]:
 # Words that appear in almost every lab-reference page title and so prove
 # nothing about topical relatedness ("Blood Glucose Test" vs "Blood Urea
 # Nitrogen" share "blood" without being related).
-# BUG FOUND (PK0016.pdf): "Urine Quantity" - a genuinely uncovered test (no
-# NHS/NIH page discusses urine specimen volume) - passed this guard anyway
-# and grounded on "Blood in Urine", an unrelated topic, because "urine" is
-# the only word the two share and it wasn't excluded here the way "blood"
-# already was. "urine"/"urinary" appear in nearly every urinalysis page
-# title, so - exactly like "blood" or "test" - sharing that word proves
-# specimen type, not topical relatedness.
+
+# no NHS/NIH page discusses urine specimen volume - passed this guard anyway
+# and grounded on "Blood in Urine", an unrelated topic, because "urine" is the
+# only word the two share and it wasn't excluded here the way "blood" already
 _ANCHOR_STOPWORDS = frozenset({
     "test", "tests", "testing", "blood", "level", "levels", "count", "counts",
     "panel", "result", "results", "screening", "screen", "serum", "plasma",
@@ -206,7 +186,7 @@ def _has_lexical_anchor(test_name: str, test_id: Optional[str], chunk: dict) -> 
 
     BUG FOUND: retrieve_context builds its query as
     "{name} ({test_id}) blood test result meaning". For a name carrying little
-    semantic signal of its own -- "Colour", "pH", "Specific Gravity" -- that
+    semantic signal of its own, "Colour", "pH", "Specific Gravity", that
     boilerplate suffix DOMINATES the embedding, so the query lands near
     whichever generic lab page happens to be closest and clears the similarity
     floor on the strength of the boilerplate alone. Measured on this corpus:
@@ -215,7 +195,7 @@ def _has_lexical_anchor(test_name: str, test_id: Optional[str], chunk: dict) -> 
     appeared under the patient's result, which is worse than saying "not
     covered": the explanation LOOKS sourced and is not.
 
-    A higher floor cannot fix this -- correct matches like Nitrite (0.575) sit
+    A higher floor cannot fix this, correct matches like Nitrite (0.575) sit
     at the same scores as those false ones, so the clusters overlap. What
     separates them is lexical: a genuine match shares a word with its page
     ("Bilirubin" -> "Bilirubin Blood Test", "Red Cells" -> "Red Blood Cell
@@ -234,11 +214,7 @@ def _has_lexical_anchor(test_name: str, test_id: Optional[str], chunk: dict) -> 
     # Title alone is too strict for analytes whose reference page is filed
     # under a broader name: MCH/MCHC live on the MCV page, VLDL and the
     # cholesterol ratios on "Cholesterol Levels", Hb A/Hb A2 on "Hemoglobin
-    # Test". Those pages do discuss the analyte -- they just aren't named
-    # after it -- so a passage that mentions it BY NAME in its body is a
-    # genuine match. This stays strict where it matters: the hemoglobin page
-    # never says "HBsAg", and the hematocrit page never says "colour", so the
-    # false positives above are still rejected.
+    # Test".
     return bool(name_tokens & _anchor_tokens(chunk.get("text", "")))
 
 
@@ -265,18 +241,16 @@ def retrieve_context(
     ).astype("float32")
 
     # Over-fetch, then re-rank with the test_id bonus before applying the
-    # cutoff -- the right page may not be in the raw top-k on name alone.
+    # cutoff, the right page may not be in the raw top-k on name alone.
     fetch_k = min(max(k * 5, 15), _INDEX.ntotal)
     similarities, indices = _INDEX.search(query_vector, fetch_k)
 
     candidates = list(zip(similarities[0], indices[0]))
 
     # Vector rank alone can miss a page that is EXPLICITLY curated for this
-    # analyte: the CBC page is tagged MCH/MCHC but embeds at only 0.233 against
-    # the query "MCH", so it sat far outside the top fetch_k and MCH/MCHC were
-    # reported as uncovered. Pull tagged chunks in by id regardless of rank and
-    # score them exactly (vectors are L2-normalised, so inner product IS
-    # cosine similarity), then let the ranking below decide the order.
+    # analyte: the CBC page is tagged MCH/MCHC but embeds at only 0.233
+    # against the query "MCH", so it sat far outside the top fetch_k and
+    # MCH/MCHC were reported as uncovered.
     if test_id:
         seen_idx = {int(i) for _, i in candidates if i != -1}
         for extra_idx in _chunks_tagged(test_id):
@@ -299,13 +273,7 @@ def retrieve_context(
             score += TEST_ID_BONUS
         # A page EXPLICITLY curated in build_rag_chunks.py as covering this
         # analyte is relevant by editorial decision, which is better evidence
-        # than embedding proximity -- so the similarity floor does not apply
-        # to it. Without this exemption the flat +TEST_ID_BONUS was far too
-        # small to rescue a correctly-tagged page that simply embeds poorly:
-        # the CBC page is tagged MCH/MCHC and is the right source for both,
-        # but scores 0.233 against the query "MCH", so it was cut by the 0.55
-        # floor and MCH/MCHC fell through to "not covered by NHS UK / NIH
-        # MedlinePlus" despite being curated.
+        # than embedding proximity, so the similarity floor does not apply to
         if score < min_similarity and not tagged:
             continue
         scored.append((score, float(similarity), chunk))

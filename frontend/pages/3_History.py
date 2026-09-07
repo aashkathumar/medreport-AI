@@ -18,8 +18,8 @@ st.write(f"You have **{len(reports)}** report(s) from this session.")
 
 for item in reports:
     data = item["report_data"]
-    # ETHICS CONSTRAINT (Chris Clarke): no status field on explained_results
-    # on this branch, so no "flagged value(s)" count -- explained_results
+    # ETHICS CONSTRAINT: no status field on explained_results
+    # on this branch, so no "flagged value(s)" count, explained_results
     # count alone, not a high/low tally.
     count = len(data.get("explained_results", []))
 

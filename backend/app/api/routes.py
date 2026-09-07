@@ -23,7 +23,7 @@ router = APIRouter()
 @router.get("/llm/providers")
 def get_available_providers():
     """Returns each provider with whether it has a credential configured and
-    whether it can accept image (vision) payloads -- listing provider names
+    whether it can accept image (vision) payloads, listing provider names
     alone hid the fact that a chain entry had no API key behind it."""
     return {"providers": provider_status()}
 
@@ -71,12 +71,9 @@ async def upload_pdf(
     # 1. Read PDF bytes directly once
     file_bytes = await file.read()
 
-    # CHANGED: everything below this point is fully BLOCKING work - pdfplumber,
-    # faiss, `requests`, and the LLM SDKs - and it used to run directly on the
-    # event loop inside this `async def`. For the entire duration of a request
-    # (20s on a small report, minutes on a large one) no other request could be
-    # served at all: /health froze, and a second user appeared to hang. Handing
-    # it to the threadpool keeps the loop free.
+    # CHANGED: everything below this point is fully BLOCKING work -
+    # pdfplumber, faiss, `requests`, and the LLM SDKs - and it used to run
+    # directly on the event loop inside this `async def`.
     return await run_in_threadpool(
         _process_upload, file_bytes, user_id, age, sex, diet_type,
         parse_method, provider, model_name,
@@ -94,10 +91,7 @@ def _process_upload(
     model_name: str,
 ):
     # 2. Pass file_bytes, provider AND the patient demographics down into
-    #    parse_report. CHANGED: sex/age were not forwarded, so
-    #    finalize_result() resolved every sex-specific static range against
-    #    the defaults ("unknown"/30) -- a female patient's haemoglobin was
-    #    range-checked against the male range.
+    # parse_report.
     parse_result = parse_report(
         file_bytes,
         method=parse_method,
@@ -112,15 +106,9 @@ def _process_upload(
 
     profile = UserProfile(user_id=user_id, age=age, sex=sex, diet_type=diet_type)
 
-    # CHANGED: this loop used to re-derive status and ranges from the
-    # 21-entry static REFERENCE_DB, discarding what parse_report() had
-    # already computed. finalize_result() resolves each result against the
-    # reference range PRINTED ON THIS REPORT first (the lab's own
-    # method/instrument-specific range), falling back to the static table
-    # only when the document printed nothing parseable -- that priority order
-    # is the whole point of the ref_range work, and re-deriving here inverted
-    # it. Any test outside the static table also lost its range entirely and
-    # showed no normal range in the UI or the PDF.
+    # CHANGED: this loop used to re-derive status and ranges from the 21-entry
+    # static REFERENCE_DB, discarding what parse_report() had already
+    # computed.
     test_results = []
     for r in raw:
         test_results.append(TestResult(
@@ -150,14 +138,7 @@ def _process_upload(
         "ungrounded_test_ids": ungrounded_test_ids,
         "summary_degraded": summary_degraded,
     }
-    # CHANGED: no longer persisted server-side. Storing full explained
-    # reports indefinitely (the DynamoDB table has no TTL, unlike the S3
-    # bucket's 1-day lifecycle rule) was a real gap between what the upload
-    # page promises ("processed transiently, never stored raw") and what
-    # actually happened -- and the read side of this (GET /reports/{user_id})
-    # had no access control at all: any user_id could be typed in to view
-    # another patient's history. Session-only avoids both: nothing exists
-    # once the browser tab closes, and there's nothing cross-session to leak.
+    # CHANGED: no longer persisted server-side.
     report_id = str(uuid.uuid4())
 
     return {
@@ -166,7 +147,7 @@ def _process_upload(
         "explained_results": [r.model_dump() for r in explained],
         "degraded_test_ids": degraded_test_ids,
         # Tests whose generated explanation failed source verification and was
-        # replaced with a GP referral -- surfaced so the constraint is visible.
+        # replaced with a GP referral, surfaced so the constraint is visible.
         "ungrounded_test_ids": ungrounded_test_ids,
         "summary_degraded": summary_degraded,
         **summary,
@@ -177,7 +158,7 @@ async def explain_manual(data: dict):
     """Explains manually-typed test values (the frontend's "Manual Entry"
     fallback, used when PDF extraction fails or a patient just wants to
     type one value in). Previously this had NO backend counterpart at
-    all -- the frontend collected entries into session_state and had
+    all, the frontend collected entries into session_state and had
     nothing to send them to. Mirrors /upload-pdf's pipeline from the point
     just after parsing: same test_id/range resolution, same batched
     explanation call, same response shape.
@@ -203,8 +184,7 @@ def _process_manual(raw_results, user_id, age, sex, diet_type, provider, model_n
 
     # Same resolution path pdf_parser.py uses for extracted rows, so a
     # manually-typed "Haemoglobin" gets the identical canonical id and
-    # normal-range lookup a PDF-extracted "Haemoglobin" would -- no reason
-    # for the two entry paths to disagree on what a test name means.
+    # normal-range lookup a PDF-extracted "Haemoglobin" would, no reason for
     test_results = []
     for r in raw_results:
         raw_name = (r.get("raw_name") or "").strip()
@@ -260,10 +240,7 @@ async def download_pdf(data: dict):
     try:
         raw_explained = data.get("explained_results", [])
         
-        # 1. Reconstruct Pydantic models from dicts cleanly
-        # ETHICS CONSTRAINT (Chris Clarke): status/normal_range_min/max/
-        # what_your_result_means no longer exist on ExplainedResult on this
-        # branch (see schemas.py) -- dropped here to match.
+        # 1.
         explained_results = []
         for item in raw_explained:
             if isinstance(item, dict):

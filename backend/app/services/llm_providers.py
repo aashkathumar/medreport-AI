@@ -29,15 +29,8 @@ def _clean_json_string(text: Optional[str]) -> str:
     cleaned = re.sub(r"\s*```$", "", cleaned)
     cleaned = cleaned.strip()
 
-    # Trim to the outermost {...} span whenever one is present.
-    #
-    # BUG FOUND: this only ran `if not cleaned.startswith("{")` -- so a
-    # response that starts with the JSON object but has ANYTHING after its
-    # closing brace (a trailing note, a second object, stray whitespace plus
-    # commentary) sailed straight past this guard and into json.loads()
-    # untouched, which then threw "Extra data: line N column M" on the
-    # trailing content. Trimming to [first "{", last "}"] is a no-op for a
-    # response that is already pure JSON, so it's safe to always apply.
+    # Trim to the outermost {...} span. Used to miss trailing content after
+    # a valid object and throw "Extra data"; a no-op on already-clean JSON.
     if "{" in cleaned and "}" in cleaned:
         start = cleaned.find("{")
         end = cleaned.rfind("}")
@@ -48,16 +41,16 @@ def _clean_json_string(text: Optional[str]) -> str:
 
 
 def call_gemini(
-    system: str, 
-    prompt: Union[str, list], 
-    max_tokens: int = 2500, 
+    system: str,
+    prompt: Union[str, list],
+    max_tokens: int = 2500,
     model: str = None,
     timeout: float = None
 ) -> dict:
     """Calls Google Gemini API natively. Accepts text strings or vision content arrays."""
     import google.generativeai as genai
     genai.configure(api_key=settings.gemini_api_key)
-    
+
     target_model = model or settings.gemini_model
     client = genai.GenerativeModel(target_model, system_instruction=system)
 
@@ -95,9 +88,9 @@ def call_gemini(
 
 
 def call_groq_llama(
-    system: str, 
-    prompt: Union[str, list], 
-    max_tokens: int = 4000, 
+    system: str,
+    prompt: Union[str, list],
+    max_tokens: int = 4000,
     model: str = None,
     timeout: float = None
 ) -> dict:
@@ -128,12 +121,12 @@ def call_groq_llama(
     )
     content = msg.choices[0].message.content or "{}"
     return json.loads(_clean_json_string(content))
-    
+
 
 def call_mistral(
-    system: str, 
-    prompt: Union[str, list], 
-    max_tokens: int = 2500, 
+    system: str,
+    prompt: Union[str, list],
+    max_tokens: int = 2500,
     model: str = None,
     timeout: float = None
 ) -> dict:
@@ -186,31 +179,10 @@ def call_cohere(
     model: str = None,
     timeout: float = None
 ) -> dict:
-    """Cohere v2 Chat API, text-only.
-
-    Scaffolded ahead of a key being available.
-
-    Response shape is NOT choices[0].message.content (OpenAI-style) -- v2
-    nests reply text inside message.content as an array of typed content
-    items, e.g. [{"type": "text", "text": "..."}]. Reasoning-capable models
-    (Command A+ etc.) can prepend a "thinking" block before the "text"
-    block, so this must find the "text"-typed item rather than assume
-    content[0] -- the same failure class as the NVIDIA reasoning models
-    (nemotron-3-super-120b-a12b, meta/muse-glimmer-30b) that split output
-    into a separate reasoning block and broke a naive content[0] parse.
-
-    BUG FOUND: response_format={"type": "json_object"} is NOT supported by
-    every model in Cohere's own lineup -- c4ai-aya-expanse-32b and
-    c4ai-aya-vision-32b both hard-reject it with a 400 ("response_format is
-    not supported with the specified model"). Dropping it universally fixed
-    those two, but broke command-a-reasoning-08-2025 the other way: without
-    the schema enforcement, its free-form JSON output isn't always strictly
-    valid (one attempt failed to parse on a missing delimiter) even though
-    the same model passed cleanly WITH response_format. Neither choice
-    alone covers every model, so this tries response_format first and only
-    drops it on that specific "not supported" 400 -- not on any other
-    error, which should surface normally instead of being masked by a
-    silent retry.
+    """Cohere v2 Chat API, text-only. Reply is nested in message.content as
+    typed items, so this looks for the "text"-typed one, not content[0].
+    response_format isn't supported by every model, so it's tried first and
+    only dropped on that specific 400, not on any other error.
     """
     if not settings.cohere_api_key:
         raise ValueError("COHERE_API_KEY is not configured in .env!")
@@ -224,7 +196,7 @@ def call_cohere(
 
     target_model = model or settings.cohere_model
     if not target_model:
-        raise ValueError("No Cohere model configured -- set 'model' or cohere_model.")
+        raise ValueError("No Cohere model configured, set 'model' or cohere_model.")
 
     headers = {
         "Authorization": f"Bearer {settings.cohere_api_key}",
@@ -261,36 +233,11 @@ def call_cloudflare(
     model: str = None,
     timeout: float = None
 ) -> dict:
-    """Cloudflare Workers AI REST API, text-only until a vision model is
-    confirmed on this account.
-
-    BUG FOUND (2026-08-28), live-verified across ~19 models: Workers AI has
-    TWO DIFFERENT response shapes depending on model family, not one --
-    - Newer/chat-completions-style models (gpt-oss, llama-3.3-70b,
-      llama-4-scout, llama-3.2-3b, glm-4.7-flash, granite, gemma-4, qwen3-
-      family, nemotron, mistral-small-3.1, gemma-sea-lion) return OpenAI-
-      compatible result.choices[0].message.content, a JSON *string*.
-    - Older/legacy models (llama-3.2-1b, qwen2.5-coder-32b, and likely
-      others not yet hit) have NO "choices" key at all -- instead
-      result.response holds the answer directly, and it can be EITHER a
-      JSON string (llama-3.2-1b) OR an already-parsed dict (qwen2.5-coder-
-      32b: Workers AI parsed it for us because the model used tool-calling-
-      style structured output).
-    First placeholder guessed only the legacy shape and got the parsing
-    wrong (assumed result.response is always a string); the immediate next
-    guess assumed only the chat-completions shape. Neither alone covers the
-    account's real model lineup -- this checks for choices first (the more
-    common case among the models that passed), then falls back to
-    result.response, returning it as-is if already a dict/list rather than
-    trying to json.loads() something that isn't a string.
-
-    Reasoning models (gpt-oss, qwq, deepseek-r1-distill) put chain-of-
-    thought in a separate reasoning_content field, not prepended to content
-    like Cohere's Command A+ -- so no reasoning-block-stripping needed here.
-    They DO need a larger max_tokens budget than non-reasoning models,
-    though: at 800 several returned empty content because the hidden
-    reasoning consumed the whole budget before any answer was written;
-    2000-4000 cleared that for every reasoning model that otherwise worked.
+    """Cloudflare Workers AI, text-only. Newer models return OpenAI-style
+    choices[0].message.content; older ones have no "choices" key and put
+    the answer in result.response instead, as a string or already-parsed
+    dict, so this checks choices first and falls back to result.response.
+    Reasoning models need max_tokens 2000-4000, 800 left several empty.
     """
     if not settings.cloudflare_api_key:
         raise ValueError("CLOUDFLARE_API_KEY is not configured in .env!")
@@ -306,7 +253,7 @@ def call_cloudflare(
 
     target_model = model or settings.cloudflare_model
     if not target_model:
-        raise ValueError("No Cloudflare model configured -- set 'model' or cloudflare_model.")
+        raise ValueError("No Cloudflare model configured, set 'model' or cloudflare_model.")
 
     url = f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/run/{target_model}"
     resp = requests.post(
@@ -340,14 +287,14 @@ def call_cloudflare(
 
 
 def call_openrouter(
-    system: str, 
-    prompt: Union[str, list], 
-    max_tokens: int = 2500, 
+    system: str,
+    prompt: Union[str, list],
+    max_tokens: int = 2500,
     model: str = None,
     timeout: float = None
 ) -> dict:
     from openai import OpenAI
-    
+
     if not settings.openrouter_api_key:
         raise ValueError("OPENROUTER_API_KEY is not configured in .env!")
 
@@ -359,11 +306,11 @@ def call_openrouter(
         timeout=_resolve_timeout(timeout, has_images),
         max_retries=0,
     )
-    
+
     target_model = model or (
         settings.openrouter_vision_model if has_images else settings.openrouter_model
     )
-    
+
     response = client.chat.completions.create(
         model=target_model,
         max_tokens=max_tokens,
@@ -379,9 +326,9 @@ def call_openrouter(
 
 
 def call_nvidia(
-    system: str, 
-    prompt: Union[str, list], 
-    max_tokens: int = 2500, 
+    system: str,
+    prompt: Union[str, list],
+    max_tokens: int = 2500,
     model: str = None,
     timeout: float = None
 ) -> dict:

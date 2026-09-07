@@ -1,6 +1,6 @@
 """One-off evaluation run for the dissertation's Chapter 4 (Results).
 
-Not a permanent part of the application -- run once, by hand, to produce
+Not a permanent part of the application, run once, by hand, to produce
 real numbers for the accuracy table instead of the placeholder rows left
 in the draft. Reused unchanged (same test cases, same scoring) against
 both branches so the two branches' numbers are directly comparable.
@@ -9,7 +9,7 @@ Metrics:
   - grounding_pass: whether the explanation passed the system's own
     anti-hallucination verification (_verify_grounded) without being
     degraded to the generic fallback. This is a genuine, already-existing
-    system behaviour, not a metric invented for this evaluation -- a
+    system behaviour, not a metric invented for this evaluation, a
     "pass" means every claim in the explanation was checked against its
     retrieved NHS/NIH source text and found to contain no unsourced
     figure.

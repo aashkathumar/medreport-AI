@@ -13,12 +13,7 @@ BLUE = HexColor("#003E74")
 LGREY = HexColor("#F5F5F5")
 
 # LLM output occasionally contains Unicode dash/hyphen variants (most often
-# U+2011 NON-BREAKING HYPHEN, e.g. "iron‑rich") that have no glyph in
-# ReportLab's base Helvetica font (WinAnsi/CP1252 encoding) -- it doesn't
-# raise, it silently renders a black notdef box in the PDF instead, so this
-# has to be caught here rather than relying on an exception. En/em dashes,
-# curly quotes, and ellipsis ARE in CP1252 and render fine as-is; only the
-# hyphen variants CP1252 doesn't cover need remapping.
+# U+2011 NON-BREAKING HYPHEN, e.g.
 _UNSUPPORTED_CHARS = {
     "‐": "-",  # HYPHEN
     "‑": "-",  # NON-BREAKING HYPHEN
@@ -83,8 +78,8 @@ def generate_report_pdf(
     story.append(HRFlowable(width="100%", thickness=0.5, color=LGREY, spaceAfter=6))
     story.append(Paragraph("Your Results, Explained", head_s))
 
-    # ETHICS CONSTRAINT (Chris Clarke): no status/range on ExplainedResult
-    # here (see schemas.py) -- the banner shows the raw extracted value only
+    # ETHICS CONSTRAINT: no status/range on ExplainedResult
+    # here (see schemas.py), the banner shows the raw extracted value only
     # (what was on the report), never a normal/high/low judgement about it.
     for r in explained_results:
         banner = Table(

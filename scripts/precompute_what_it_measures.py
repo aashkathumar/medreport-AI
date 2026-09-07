@@ -23,12 +23,9 @@ from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_ROOT / "backend"))
-# Settings.model_config points env_file=".env" relative to the CURRENT
-# WORKING DIRECTORY, not this file's location -- running this script from
-# the repo root (rather than backend/) silently loaded zero provider keys
-# and fell through to config.py's hardcoded 5-entry default chain instead
-# of the real 52-entry .env chain. Forcing cwd here makes the script work
-# the same regardless of where it's invoked from.
+# Settings.model_config points env_file=".env" relative to the CURRENT WORKING
+# DIRECTORY, not this file's location, running this script from the repo root
+# (rather than backend/) silently loaded zero provider keys and fell through
 os.chdir(_ROOT / "backend")
 
 from app.models.schemas import RangeStatus, TestResult  # noqa: E402
@@ -43,7 +40,7 @@ SYSTEM = (
     "You are an expert health literacy assistant. For the given lab test, "
     "explain in 2-3 sentences what it measures and what it does in the body, "
     "based ONLY on the facts in the reference context provided. Do not "
-    "mention any specific patient value, range, or status -- this is a "
+    "mention any specific patient value, range, or status, this is a "
     "general explanation reused across every report, not tied to one "
     "result. Write in your own words, do not copy the reference text "
     "verbatim. Respond ONLY with valid JSON: {\"what_it_measures\": \"...\"}"
@@ -75,7 +72,7 @@ def covered_test_ids() -> list[str]:
 def precompute_one(test_id: str) -> str | None:
     """Returns grounded what_it_measures text for test_id, or None if there's
     no usable reference context or the LLM's output fails verification."""
-    # A synthetic TestResult -- precomputing this field needs no real patient
+    # A synthetic TestResult, precomputing this field needs no real patient
     # value, only enough shape for _build_grounding()'s retrieval to work.
     stub = TestResult(
         test_id=test_id, raw_name=test_id.replace("_", " ").title(),

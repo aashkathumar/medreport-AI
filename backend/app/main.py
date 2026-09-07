@@ -37,6 +37,6 @@ def _warm_rag_index() -> None:
 
     threading.Thread(target=_warm, name="rag-warmup", daemon=True).start()
 
-# Lambda handler -- Mangum wraps FastAPI for AWS Lambda.
+# Lambda handler, Mangum wraps FastAPI for AWS Lambda.
 # Not used when running locally with `uvicorn app.main:app`.
 handler = Mangum(app, lifespan="off")

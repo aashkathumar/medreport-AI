@@ -7,10 +7,10 @@ Usage (from repo root):
     python scripts/build_rag_index.py
 
 First run downloads the embedding model (~90MB) from Hugging Face Hub
-automatically -- no manual download needed, just an internet connection.
+automatically, no manual download needed, just an internet connection.
 
 CHANGED: the index was IndexFlatL2 over raw (un-normalised) embeddings, and
-rag_service filtered on "L2 distance <= 1.2" -- a threshold with no
+rag_service filtered on "L2 distance <= 1.2", a threshold with no
 interpretable meaning, tuned against a corpus that was in practice never
 queried. Embeddings are now L2-normalised and stored in an inner-product
 index, so a search score IS cosine similarity in [-1, 1]. That makes the
@@ -19,7 +19,7 @@ on-topic passages, drops unrelated ones), and it is the metric
 all-MiniLM-L6-v2 is actually trained for.
 
 Also writes rag_index_meta.json so rag_service can verify at load time that
-the index and the chunks file are in sync -- a stale index silently paired
+the index and the chunks file are in sync, a stale index silently paired
 with a rebuilt corpus would otherwise return text for the wrong test.
 """
 import json
@@ -43,7 +43,7 @@ def build_index():
 
     chunks = json.loads(chunks_path.read_text())
     if not chunks:
-        raise ValueError("data/rag_chunks.json is empty -- re-run data/build_rag_chunks.py.")
+        raise ValueError("data/rag_chunks.json is empty, re-run data/build_rag_chunks.py.")
 
     # Embed topic + section + body (see "embed_text" in build_rag_chunks.py):
     # a passage like "What do the results mean?" is not retrievable on its own

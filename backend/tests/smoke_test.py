@@ -24,7 +24,7 @@ def test_health():
 def test_upload_with_sample_pdf():
     pdf_path = os.path.join(os.path.dirname(__file__), "sample_report.pdf")
     if not os.path.exists(pdf_path):
-        print("No sample_report.pdf found -- run generate_sample_pdf.py first. Skipping upload test.")
+        print("No sample_report.pdf found, run generate_sample_pdf.py first. Skipping upload test.")
         return
 
     with open(pdf_path, "rb") as f:
@@ -39,8 +39,6 @@ def test_upload_with_sample_pdf():
             },
             # The pipeline makes batched LLM calls for every test plus a
             # summary pass; a full report legitimately takes ~5-6 minutes.
-            # At 120s this timed out while the server was still working and
-            # the smoke test failed on every run.
             timeout=600,
         )
 

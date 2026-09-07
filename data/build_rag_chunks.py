@@ -1,5 +1,5 @@
 """
-Builds data/rag_chunks.json -- the RAG corpus -- by scraping NHS UK and
+Builds data/rag_chunks.json, the RAG corpus, by scraping NHS UK and
 NIH MedlinePlus reference pages.
 
 Usage (from repo root):
@@ -51,15 +51,7 @@ MIN_CHUNK_CHARS = 120
 
 
 # --------------------------------------------------------------------------
-# Source map -- every URL below returned HTTP 200 when this list was built.
-# --------------------------------------------------------------------------
-# test_ids use the same canonical IDs as data/blood_tests.json,
-# data/urine_tests.json and reference_db.ALIAS_MAP, so retrieved chunks can be
-# matched back to an extracted test. Pages that cover several analytes list
-# them all. IDs that aren't in the curated JSON (RBC, HCT, MCV, UREA, ...) are
-# deliberately included: those are exactly the tests that appear on real
-# pathology reports but have no curated entry, and previously fell through to
-# the "Unlisted biomarker / Requires Clinical Review" branch.
+# Source map, every URL below returned HTTP 200 when this list was built.
 MEDLINEPLUS = "NIH MedlinePlus"
 NHS = "NHS UK"
 
@@ -77,11 +69,7 @@ SOURCES = [
     {"ids": ["MCV"], "src": MEDLINEPLUS, "url": _MP.format("mcv-mean-corpuscular-volume")},
     {"ids": ["RETIC"], "src": MEDLINEPLUS, "url": _MP.format("reticulocyte-count")},
     {"ids": ["ESR"], "src": MEDLINEPLUS, "url": _MP.format("erythrocyte-sedimentation-rate-esr")},
-    # The differential and red-cell indices. Added after evaluation: these
-    # appear on virtually every full blood count, but were not covered, so
-    # their explanations failed source verification and were (correctly)
-    # replaced with GP referrals. Covering them converts 12 referrals per
-    # report into genuinely grounded explanations.
+    # The differential and red-cell indices.
     {"ids": ["NEUTROPHILS", "LYMPHOCYTES", "EOSINOPHILS", "MONOCYTES",
              "BASOPHILS", "WBC"], "src": MEDLINEPLUS,
      "url": _MP.format("blood-differential")},
@@ -167,12 +155,7 @@ SOURCES = [
     # --- Urinalysis ---------------------------------------------------------
     # BUG FOUND: URINE_COLOUR was previously patched directly into the built
     # rag_chunks.json (to fix "Colour" reporting "not covered" despite this
-    # page's "Normal Results" section discussing urine colour explicitly),
-    # but that fix was never brought back into this source-of-truth list -
-    # a future full rebuild (`python data/build_rag_chunks.py`) would have
-    # silently lost it. "CLEARITY" added the same way: the article's
-    # microscopic-examination section explicitly asks "Is it clear or
-    # cloudy?", genuine content for a lab report's "Clearity" field.
+    # page's "Normal Results" section discussing urine colour explicitly), but
     {"ids": ["URINE_PROTEIN", "URINE_GLUCOSE", "URINE_PH", "URINE_KETONES",
              "URINE_NITRITES", "URINE_LEUKOCYTES", "URINE_COLOUR", "CLEARITY"],
      "src": MEDLINEPLUS, "url": "https://medlineplus.gov/ency/article/003579.htm"},
@@ -189,12 +172,8 @@ SOURCES = [
      "url": "https://medlineplus.gov/ency/article/003587.htm"},
     {"ids": ["CASTS"], "src": MEDLINEPLUS,
      "url": "https://medlineplus.gov/ency/article/003586.htm"},
-    # These three were previously reported "not covered" only because the
-    # URL pattern was guessed wrong (tried .../urobilinogen-test/ etc, all
-    # 404). They were found by querying the MedlinePlus search API
-    # (wsearch.nlm.nih.gov) and reading the real links off the Urinalysis
-    # health-topic page - a better discovery method than guessing slugs, and
-    # worth reusing when extending this list further.
+    # These three were previously reported "not covered" only because the URL
+    # pattern was guessed wrong (tried .../urobilinogen-test/ etc, all 404).
     {"ids": ["UROBILINOGEN"], "src": MEDLINEPLUS,
      "url": "https://medlineplus.gov/lab-tests/urobilinogen-in-urine/"},
     {"ids": ["EPITHELIAL_CELLS"], "src": MEDLINEPLUS,
@@ -217,14 +196,7 @@ SOURCES = [
 # --------------------------------------------------------------------------
 # Auto-discovery: MedlinePlus's own A-Z lab-tests index
 # --------------------------------------------------------------------------
-# CHANGED: the hand-curated SOURCES list above covers ~76 test_ids from
-# ~60 manually-picked URLs. Checked live: medlineplus.gov/lab-tests/ alone
-# lists 300+ individual test pages -- the curated list was using under a
-# quarter of MedlinePlus's own lab-tests catalog, not because NHS/NIH don't
-# cover more, but because nobody had crawled the index page itself.
-# _MEDLINEPLUS_INDEX below fetches that index and scrapes every linked page
-# the same way as SOURCES, instead of relying on someone hand-typing URLs
-# one at a time.
+# CHANGED: the hand-curated SOURCES list above covers ~76 test_ids from ~60
 _MEDLINEPLUS_INDEX = "https://medlineplus.gov/lab-tests/"
 
 
@@ -255,32 +227,26 @@ def _derive_test_ids(title: str) -> list[str]:
 
     A scraped chunk is only reachable at explanation time if it's tagged
     with the SAME id a real report's raw field name resolves to via
-    reference_db.canonicalize_test_name() -- not just whatever the page's
+    reference_db.canonicalize_test_name(), not just whatever the page's
     own title happens to be. canonicalize_test_name() is deliberately
     narrow (see its own docstring) and does NOT strip words like "Test" or
     "Levels", but a real lab report prints "Aldosterone", not "Aldosterone
-    Test" -- so that stripping has to happen here, or every auto-discovered
+    Test", so that stripping has to happen here, or every auto-discovered
     chunk would sit unused under a title-shaped id nothing ever matches.
     Also splits out any parenthetical abbreviation ("Adrenocorticotropic
     Hormone (ACTH)") as its OWN candidate id, since reports commonly print
     the abbreviation alone rather than the full name.
     """
     ids = []
-    # Minimum 2 chars -- a real medical abbreviation is never a single
-    # letter, but a stray "(a)" (e.g. "Lipoprotein (a) Blood Test") would
-    # otherwise canonicalize to the bogus id "A", which is dangerous: a
-    # PDF extraction artifact from an unrelated report (a stray footnote
-    # marker literally named "a") could then wrongly ground against real
-    # lipoprotein(a) reference text.
+    # Minimum 2 chars, a real medical abbreviation is never a single letter,
+    # but a stray "(a)" (e.g.
     for paren in re.findall(r"\(([A-Za-z0-9\-/ ]{2,15})\)", title):
         cand = canonicalize_test_name(paren)
         if cand and cand != "UNKNOWN_TEST" and cand not in ids:
             ids.append(cand)
     base = re.sub(r"\([^)]*\)", " ", title)
     # Multi-word phrases first ("Blood Test" as a unit), or the bare "test"
-    # rule alone leaves "Blood" behind (e.g. "ALT Blood Test" -> "ALT_BLOOD"
-    # instead of "ALT", which then can't match the corpus's existing "ALT"
-    # tag from the curated list).
+    # rule alone leaves "Blood" behind (e.g.
     base = re.sub(
         r"\b(tumor\s*marker\s*test|blood\s*tests?|screening\s*tests?|"
         r"test|tests|screening|panel|levels?)\b",
@@ -431,18 +397,11 @@ def build() -> int:
         discovered = discover_medlineplus_lab_tests(session)
         print(f"  found {len(discovered)} pages on the index")
     except Exception as e:
-        print(f"  FAILED to fetch the index: {e} -- continuing with the curated list only")
+        print(f"  FAILED to fetch the index: {e}, continuing with the curated list only")
         discovered = []
     time.sleep(POLITE_DELAY_SEC)
 
     # Merge entries that point at the same URL, unioning their test_ids.
-    # Without this, listing a page twice for different analytes (the CBC page
-    # covers MCV in one entry and MCH/MCHC in another) meant the second entry
-    # was silently discarded by the duplicate-text check, and those analytes
-    # ended up with no coverage at all. The auto-discovered pages are merged
-    # in the SAME way -- a curated entry's hand-verified ids and an
-    # auto-discovered entry's derived ids for the same URL simply union,
-    # with the curated ids added second so they're never displaced.
     merged: dict = {}
     for target in discovered + SOURCES:
         entry = merged.setdefault(

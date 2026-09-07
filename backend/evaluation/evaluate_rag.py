@@ -7,19 +7,19 @@ clinical interpretation of results.
 
 Reports three things:
 
-  1. RETRIEVAL ACCURACY  -- given a realistic raw test name as printed on a
+  1. RETRIEVAL ACCURACY , given a realistic raw test name as printed on a
      lab report, does the retriever return passages from the page that
      actually covers that analyte? Precision@1 and Recall@k, plus the
      rejection rate on out-of-corpus queries (a retriever that returns
      something for everything is not constrained).
 
-  2. GROUNDEDNESS        -- what fraction of generated explanations pass
+  2. GROUNDEDNESS       , what fraction of generated explanations pass
      post-generation source verification (no unsourced figures, sufficient
      lexical support from the retrieved NHS/NIH text). Ungrounded output is
      replaced by a GP referral in production, so this is the rate at which
      the constraint actually binds.
 
-  3. READABILITY         -- Flesch-Kincaid grade level and Flesch reading
+  3. READABILITY        , Flesch-Kincaid grade level and Flesch reading
      ease of the generated explanations, and of the NHS/NIH source passages
      they were built from, so the two can be compared directly.
 
@@ -38,9 +38,7 @@ from app.models.schemas import RangeStatus, TestResult, UserProfile
 from app.services.rag_service import index_health, retrieve_context
 
 # Raw test names as they actually appear on lab reports, paired with the
-# canonical test_id whose source page should be retrieved. Names deliberately
-# differ in wording from the corpus page titles -- retrieval that only works
-# on exact titles is not doing anything useful.
+# canonical test_id whose source page should be retrieved.
 RETRIEVAL_CASES = [
     ("Haemoglobin", "HGB"),
     ("Hb", "HGB"),
@@ -79,7 +77,7 @@ RETRIEVAL_CASES = [
     ("Hematocrit", "HCT"),
 ]
 
-# Must retrieve NOTHING -- these are not covered by the NHS/NIH corpus, and
+# Must retrieve NOTHING, these are not covered by the NHS/NIH corpus, and
 # the system is required to direct the user to their GP instead of inventing
 # an explanation.
 OUT_OF_CORPUS_CASES = [
@@ -205,7 +203,7 @@ def main():
     print(f"  Precision@1           : {r['precision_at_1']:.1%}")
     print(f"  Recall@{K}              : {r['recall_at_k']:.1%}")
     print(f"  out-of-corpus rejected: {r['out_of_corpus_rejected']}/{r['out_of_corpus_total']}"
-          "   (must be all -- else the retriever invents coverage)")
+          "   (must be all, else the retriever invents coverage)")
     if r["misses"]:
         print("\n  misses:")
         for name, expected, topics in r["misses"]:

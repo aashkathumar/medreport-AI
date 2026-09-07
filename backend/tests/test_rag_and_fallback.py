@@ -1,7 +1,7 @@
 """
 Regression tests for the RAG grounding + provider fallback defects.
 
-Every test here corresponds to a bug that was live and silent -- each one
+Every test here corresponds to a bug that was live and silent, each one
 failed by producing plausible-looking output rather than an error, which is
 why none of them were caught by the existing suite.
 
@@ -21,7 +21,7 @@ from app.services.reference_db import get_normal_range, resolve_test_id
 
 def test_fallback_chains_exist():
     """call_with_fallback() read settings.text_fallback_chain, which was never
-    defined -- so every default-path LLM call raised AttributeError before
+    defined, so every default-path LLM call raised AttributeError before
     reaching a model, and the callers swallowed it."""
     assert isinstance(settings.text_fallback_chain, list)
     assert settings.text_fallback_chain, "text fallback chain must not be empty"
@@ -79,7 +79,7 @@ def test_alias_resolution_strips_sample_qualifiers():
 
 
 def test_rag_index_loads():
-    """_DATA_DIR pointed at backend/data, which does not exist -- retrieval
+    """_DATA_DIR pointed at backend/data, which does not exist, retrieval
     returned [] for every query ever made, permanently and silently."""
     from app.services.rag_service import index_health
 
@@ -182,7 +182,7 @@ def test_corpus_uses_only_approved_domains():
 
 def test_extraction_guardrail_fails_closed_without_source_text():
     """A scanned PDF with no text layer and no OCR is exactly where the vision
-    model is most likely to fabricate -- the guardrail used to switch itself
+    model is most likely to fabricate, the guardrail used to switch itself
     off there and pass results through unverified."""
     from app.services.pdf_parser import verify_results_against_source
 
@@ -235,11 +235,11 @@ def test_grounding_verifier_allows_digits_inside_units():
     ok, reason = _verify_grounded(generated, context, allowed_numbers=allowed)
     assert ok, reason
 
-    # Without the unit's digits the same explanation is thrown away -- this
+    # Without the unit's digits the same explanation is thrown away, this
     # is the regression being guarded against, so assert it still would be.
     ok_without, _ = _verify_grounded(
         generated, context, allowed_numbers={9.8, 4.0, 11.0})
-    assert not ok_without, "unit digits no longer needed -- update this test"
+    assert not ok_without, "unit digits no longer needed, update this test"
 
 
 def test_grounding_verifier_still_rejects_invented_figures_with_units():
@@ -258,7 +258,7 @@ def test_grounding_verifier_still_rejects_invented_figures_with_units():
 
 
 def test_grounding_verifier_ignores_digits_in_hyphenated_names():
-    """"omega-3" is a name, not the quantity 3 -- same class as T3/B12, but a
+    """"omega-3" is a name, not the quantity 3, same class as T3/B12, but a
     hyphen is non-alphanumeric so the original boundary rule missed it and
     threw away correct NHS dietary advice ("increase your intake of omega-3
     fatty acids"). A digit after "letter-" is a name; after "digit-" it is a

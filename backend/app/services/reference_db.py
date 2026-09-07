@@ -25,35 +25,10 @@ from app.models.schemas import RangeStatus
 
 _DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
 
-# Canonical alias mapping table. Includes the JSON-sourced test names/IDs
-# themselves (lowercased) plus common clinical abbreviations/synonyms, so
-# raw names extracted from a report resolve to the same curated entry
-# regardless of exact wording.
+# Canonical alias mapping table.
 ALIAS_MAP = {
-    # BUG FOUND (PK0016.pdf): these raw field labels had NO alias entry at
-    # all, so they canonicalized to a synthetic id (e.g. "CHLORIDE") that
-    # never matches the corpus's real tag for the same analyte (e.g. "CL")
-    # -- 11 of PK0016's 19 "not covered" rejections were this, not a
-    # missing-source problem: the corpus already had grounding content for
-    # every one of these, just filed under a different canonical id.
-    #
-    # BUG FOUND (2026-08-30, medreport_ai-2/3.pdf): tc_hdl_ratio and
-    # sgot_sgpt_ratio used to live HERE, in ALIAS_MAP -- which doesn't just
-    # steer grounding, it sets the RESULT's own test_id (resolve_test_id()
-    # is what pdf_parser.py calls to identity-tag each row). Aliasing
-    # "SGOT/SGPT Ratio" straight to "AST" meant that row's test_id became
-    # literally identical to the real "SGOT (AST)" row on the same report --
-    # not just for grounding, but for the per-test_id what_it_measures
-    # cache (_wim_get) AND the batch LLM response dict (both keyed by
-    # test_id). Two genuinely different rows collapsed onto one shared
-    # identity, so the ratio row silently received the AST row's entire
-    # cached explanation, verbatim. Same thing for "90 Day Average Blood
-    # Glucose" aliased to "HBA1C". Moved both (plus tc_hdl_ratio) down to
-    # GROUNDING_ALIASES instead, which redirects retrieval ONLY -- the row
-    # keeps its own distinct synthetic test_id (SGOT_SGPT_RATIO /
-    # TC_HDL_RATIO / 90_DAY_AVERAGE_BLOOD_GLUCOSE via canonicalize_test_name)
-    # while still pulling the component analyte's reference material to
-    # explain from, exactly the intended fallback.
+    # BUG FOUND (PK0016.pdf): these had no alias, so they canonicalized to a
+    # synthetic id that never matched the corpus's real tag for the analyte.
     "leukocyte_esterase": "URINE_LEUKOCYTES",
     "absolute_lymphocyte_count": "LYMPHOCYTES",
     "absolute_monocyte_count": "MONOCYTES",
@@ -61,35 +36,16 @@ ALIAS_MAP = {
     "absolute_basophil_count": "BASOPHILS",
     "blood_sugar_fasting": "GLUCOSE",
     "chloride": "CL",
-    # Unlike the ratio tests above, "Urinary Transparency" and "Clearity" are
-    # genuinely the SAME single measurement under two different labs'
-    # naming conventions -- they never both appear on one report, so merging
-    # their identity here (unlike SGOT/SGPT Ratio's) causes no same-report
-    # collision. Belongs in ALIAS_MAP, not GROUNDING_ALIASES.
+    # "Urinary Transparency" and "Clearity" are the same measurement under
+    # two labs' naming, safe to merge since they never share one report.
     "urinary_transparency": "CLEARITY",
-    # BUG FOUND (PK0016.pdf): both raw labels are the exact same measurement
-    # as an already-covered, already-cached id, just missing the alias --
-    # resolve_test_id() returned None, so each fell through to its own
-    # synthetic id, bypassing the precomputed what_it_measures cache
-    # entirely and forcing a fresh, occasionally-empty live generation
-    # (see llm_service.py's fallback string, hit when the model returns
-    # nothing for that field). Merging identity here is safe the same way
-    # urinary_transparency/CLEARITY is: these are alternate labels for one
-    # test, not a distinct sub-fraction like HB_A2, so sharing the cached
-    # explanation is correct, not lossy.
+    # BUG FOUND (PK0016.pdf): both labels were missing an alias entirely,
+    # bypassing the precomputed cache and forcing a fresh live generation.
     "total_iron_binding_capacity": "TOTAL_IRON_BINDING_CAPACITY_TIBC",
     "25_oh_vitamin_d_total": "VIT_D",
 
-    # BUG FOUND (LabReport.pdf, QuantiFERON-TB Gold panel): none of these
-    # 4 component-tube names have an alias, so all 5 rows on this report
-    # showed "not covered" -- but the corpus already has a "Tuberculosis
-    # Screening" page (test_id TUBERCULOSIS) that explicitly covers IGRA
-    # blood tests (this exact methodology) and explains positive/negative
-    # results. "Final Result" deliberately NOT aliased here despite being
-    # on the same report -- it's too generic a label (other multi-row
-    # panels likely reuse "Final Result" for an unrelated summary line),
-    # so a global alias would risk grounding a different test's result on
-    # TB content. The 4 TB-specific tube names are unique enough to be safe.
+    # BUG FOUND (QuantiFERON-TB Gold panel): none of these 4 tube names had
+    # an alias, even though the corpus already covers this exact IGRA test.
     "tb_nil_tube": "TUBERCULOSIS",
     "tb_antigen_tube": "TUBERCULOSIS",
     "tb_mitogen_tube": "TUBERCULOSIS",
@@ -116,13 +72,8 @@ ALIAS_MAP = {
     "urine_leukocytes": "URINE_LEUKOCYTES", "leukocytes_urine": "URINE_LEUKOCYTES",
     "urine_nitrites": "URINE_NITRITES", "nitrites_urine": "URINE_NITRITES",
     "urine_ketones": "URINE_KETONES", "ketones_urine": "URINE_KETONES",
-    # BUG FOUND on the Sterling Accuris report: these are simply the names real
-    # pathology labs print for tests the RAG corpus already covers under their
-    # canonical names, but no alias mapped them -- so resolve_test_id() returned
-    # None, retrieval on the raw name missed, and the patient was told
-    # "NHS UK and NIH MedlinePlus reference material was not available" for
-    # their LIVER ENZYMES, which is simply untrue. SGPT/SGOT are the older
-    # (and still standard in Indian labs) names for ALT/AST.
+    # BUG FOUND: SGPT/SGOT are the older names for ALT/AST, unaliased before,
+    # so real liver-enzyme results were wrongly reported as "not available".
     "sgpt": "ALT", "alt_sgpt": "ALT", "sgpt_alt": "ALT",
     "sgot": "AST", "ast_sgot": "AST", "sgot_ast": "AST",
     "ast": "AST", "aspartate_aminotransferase": "AST",
@@ -134,145 +85,64 @@ ALIAS_MAP = {
     "rdw_cv": "RDW_CV", "rdw": "RDW",
     "abo_type": "ABO_TYPE", "blood_group": "ABO_TYPE",
     "rh_d_type": "RH_D_TYPE", "rh_type": "RH_D_TYPE", "rhesus_factor": "RH_D_TYPE",
-    # Lets "HIV I & II Ab/Ag with P24 Ag" (Sterling Accuris's exact wording)
-    # resolve to the same "HIV" id the corpus's hiv-screening-test page is
-    # already tagged with - without this it canonicalised to the report's
-    # entire wording as one synthetic id, which no source could ever match.
+    # Resolves the report's exact wording to the corpus's "HIV" tag, without
+    # this it canonicalised to a unique id no source could ever match.
     "hiv_i_ii_ab_ag_with_p24_ag": "HIV", "hiv_ab_ag": "HIV", "hiv_screening": "HIV",
     "hbsag": "HBSAG", "hepatitis_b_surface_antigen": "HBSAG",
 }
 
-# BUG FOUND (Sterling Accuris sample report, Rh (D) Type): flag_result()'s
-# qualitative fallback maps the string "positive" to RangeStatus.HIGH, which
-# is correct for a result like "Urine Protein: Positive" (that IS abnormal),
-# but blood-group/antigen-typing fields aren't a "range" concept at all -
-# "Positive"/"Negative" or "A"/"B"/"O"/"AB" just state a fact about the
-# patient, never a clinical abnormality. The qualitative fallback flagged
-# "Rh (D) Type: Positive" as "Above normal range", which is a category
-# error, not a real finding. These test_ids are excluded from status
-# flagging entirely in finalize_result() below.
+# BUG FOUND (Rh (D) Type): the qualitative fallback flagged blood-type
+# fields as "above normal range", a category error, not a real finding.
 BLOOD_TYPE_TEST_IDS = {"ABO_TYPE", "RH_D_TYPE"}
 
 
-# Grounding-only redirects: test_id -> the test_id whose curated reference page
-# also explains this analyte.
-#
-# These are deliberately NOT in ALIAS_MAP. ALIAS_MAP decides IDENTITY, and
-# identity is the key dedupe_results() de-duplicates on -- so putting them
-# there made four genuinely different analytes (Hemoglobin, Hb A, Hb A2,
-# Foetal Hb) collapse into one row and SILENTLY DROPPED three of the
-# patient's results, plus two more across Iron/TIBC/Transferrin Saturation.
-# Each of these keeps its own identity and its own reported value; only the
-# page consulted for GROUNDING is redirected.
+# Grounding-only redirects: test_id -> the id whose page also explains this
+# analyte. Deliberately not in ALIAS_MAP, since that key also drives dedupe.
 GROUNDING_ALIASES = {
-    # BUG FOUND (2026-08-31): HB_A/HB_A2/FOETAL_HB used to redirect here on
-    # the assumption that "a type of haemoglobin" made the general
-    # haemoglobin page a valid reference. Checked directly against the
-    # actual 18 chunks tagged HGB before trusting that assumption -- none
-    # of them mention haemoglobin electrophoresis, fractions, Hb A, Hb A2,
-    # or fetal haemoglobin at all; the content is entirely about the total
-    # haemoglobin count and iron-deficiency anaemia. Redirecting here meant
-    # asking the LLM to write about a specific haemoglobin fraction from a
-    # source that never mentions fractions -- it usually returned nothing
-    # (the honest response, but landing as a blank field, see llm_service.py's
-    # fallback string) rather than inventing electrophoresis-specific
-    # content that isn't in this corpus at all. Removed so these three fall
-    # through to the same honest "not covered" path as P2 Peak/P3 Peak/
-    # Amorphous Material, consistent with treating an absent source as
-    # absent rather than stretching an adjacent page to cover it.
-    # Iron studies: both are reported on the MedlinePlus iron-tests page.
+    # BUG FOUND: used to redirect HB_A/HB_A2/FOETAL_HB here on the assumption
+    # a general haemoglobin page covers all fractions, it doesn't.
     "TIBC": "IRON",
     "TOTAL_IRON_BINDING_CAPACITY": "IRON",
     "TOTAL_IRON_BINDING_CAPACITY_TIBC": "IRON",
     "TRANSFERRIN_SATURATION": "IRON",
-    # Computed ratios/derived values: no dedicated "ratio" reference page
-    # exists, so ground on the component analyte's page and let the LLM
-    # synthesize a ratio-specific explanation from it -- same pattern
-    # already proven to work for CHOL/HDL Ratio and LDL/HDL Ratio (no entry
-    # needed there; semantic RAG retrieval alone finds the right page).
-    # These three needed an explicit redirect because their synthetic ids
-    # (SGOT_SGPT_RATIO, TC_HDL_RATIO, 90_DAY_AVERAGE_BLOOD_GLUCOSE) don't
-    # share enough vocabulary with the corpus's AST/CHOL/HBA1C pages for
-    # retrieval to find them unaided.
+    # No dedicated "ratio" page exists, so these ground on the component
+    # analyte's page instead.
     "SGOT_SGPT_RATIO": "AST",
     "TC_HDL_RATIO": "CHOL",
     "90_DAY_AVERAGE_BLOOD_GLUCOSE": "HBA1C",
-    # BUG FOUND (PK0016.pdf, live testing): "Urinary RBC" (a microscopy
-    # count, cells/HPF) and "Blood [In Urine]" (a dipstick result) are
-    # DIFFERENT rows on the SAME report -- confirmed directly against the
-    # source PDF, not assumed -- so this cannot be an ALIAS_MAP identity
-    # merge (that caused the SGOT/SGPT collision documented above: two
-    # distinct rows would silently share one cached explanation). Kept as
-    # its own synthetic id (URINARY_RBC, via canonicalize_test_name's
-    # urine/RBC guard) and redirected here to the same corpus page
-    # SPECIMEN_GROUNDING_ALIASES already established as correct for the
-    # identical concept under a different lab's naming ("Red Cells" +
-    # urine specimen tag -> URINE_BLOOD). Without this, the synthetic id
-    # had no corpus match and retrieval fell back to the blood RBC
-    # count/indices pages, describing systemic blood-cell production
-    # instead of red blood cells found in urine.
+    # BUG FOUND (PK0016.pdf): urine RBC and blood RBC count are different
+    # tests; without this it grounded on the wrong (blood) page.
     "URINARY_RBC": "URINE_BLOOD",
 }
 
-# BUG FOUND (Sterling Accuris report, urinalysis panel): "Bilirubin" and
-# "Red Cells" are printed with those bare names on BOTH the liver panel
-# (blood) and the urinalysis panel (urine) - genuinely different tests with
-# genuinely different reference pages. With no specimen information,
-# grounding always cited the blood page for both, producing "No bilirubin
-# was detected in your blood" as the explanation for a urine dipstick
-# result. pdf_parser.py now tags each row with the specimen its page's
-# section heading indicated ('urine' or None/blood) - this redirects
-# grounding for the ambiguous ids to the urine-specific corpus page ONLY
-# when that tag says urine, leaving the blood case (the default) untouched.
+# BUG FOUND (urinalysis panel): bare labels like "Bilirubin"/"Red Cells"
+# exist on both blood and urine panels; without a specimen tag, grounding
+# always cited the blood page even for a urine dipstick result.
 SPECIMEN_GROUNDING_ALIASES = {
     ("BILIRUBIN", "urine"): "URINE_BILIRUBIN",
     ("RED_CELLS", "urine"): "URINE_BLOOD",
     ("PUS_CELLS", "urine"): "URINE_LEUKOCYTES",
     ("COLOUR", "urine"): "URINE_COLOUR",
-    # "pH" on a urinalysis panel synthesises to the bare id "PH" (no ALIAS_MAP
-    # entry for the unqualified word), missing the existing curated
-    # URINE_PH entry entirely - same class of bug as COLOUR above, just a
-    # different id, and initially missed in the same fix pass.
+    # Same bug class as COLOUR above: bare "pH" missed the curated URINE_PH
+    # entry entirely.
     ("PH", "urine"): "URINE_PH",
-    # BUG FOUND (PK0016.pdf, a different lab): "Blood [In Urine]" -> BLOOD -
-    # a different synthesized id than Sterling's "Red Cells" -> RED_CELLS,
-    # same underlying test, needs its own redirect entry.
+    # BUG FOUND (a different lab): "Blood [In Urine]" needs its own redirect,
+    # distinct from Sterling's "Red Cells" naming for the same test.
     ("BLOOD", "urine"): "URINE_BLOOD",
-    # BUG FOUND (PK0016.pdf): "Urinary RBC" -> RBC without a redirect
-    # grounded on the BLOOD RBC-count page (a semantic near-match, since
-    # both are literally "counting red blood cells") - but urine microscopy
-    # RBC and a blood RBC count are different tests measuring different
-    # things. The correct reference for RBC-in-urine is the same
-    # "blood in urine" page as the dipstick blood test above.
+    # BUG FOUND (PK0016.pdf): ungrounded, fell back to the blood RBC page.
     ("RBC", "urine"): "URINE_BLOOD",
-    # These three already have curated corpus pages tagged URINE_PROTEIN/
-    # URINE_KETONES/URINE_NITRITES (Sterling's report resolves to them via
-    # a direct ALIAS_MAP entry keyed on "urine_protein" etc, since it prints
-    # "Urine Protein"). A lab printing bare "Protein"/"Ketones"/"Nitrites"
-    # on a urinalysis panel has no such alias and needs the specimen tag
-    # to find the same page.
+    # A lab printing bare "Protein"/"Ketones"/"Nitrites" (no "Urine" prefix)
+    # needs the specimen tag to find the same curated page.
     ("PROTEIN", "urine"): "URINE_PROTEIN",
     ("KETONES", "urine"): "URINE_KETONES",
     ("NITRITES", "urine"): "URINE_NITRITES",
-    # BUG FOUND (found while auditing for this exact risk class): "Urinary
-    # Glucose" canonicalises to bare "GLUCOSE" - the same id as blood
-    # glucose, which HAS a curated entry (blood_tests.json) that matched
-    # BEFORE any redirect ran, silently substituting "Blood glucose measures
-    # the amount of sugar in your blood..." for a urine dipstick result,
-    # where mere presence (not a concentration) is the abnormal finding.
+    # BUG FOUND: "Urinary Glucose" canonicalised to bare GLUCOSE, silently
+    # matching the blood-glucose curated entry instead.
     ("GLUCOSE", "urine"): "URINE_GLUCOSE",
 }
 
 # Other curated blood-test ids (blood_tests.json) that a "Urinary X"-style
 # name would canonicalise onto identically, if a report used that phrasing:
-# CREATININE, HGB, TSH, ALT, CHOL, HDL, LDL, WBC, PLT, CRP, FERRITIN, VIT_D,
-# B12, HBA1C. None of these has been observed in a real report yet (unlike
-# GLUCOSE above, which was), and none currently has a matching URINE_*
-# curated entry to redirect to even if it were - so a fix here would be
-# speculative rather than verified. Flagging as a known risk class: if a
-# future report shows e.g. "Urinary Creatinine" grounding on the blood
-# creatinine page, this dict is where the fix belongs, the same way
-# GLUCOSE was fixed above.
 
 
 def grounding_test_id(test_id: str, specimen: Optional[str] = None) -> str:
@@ -328,7 +198,7 @@ def _load_generated_aliases() -> None:
 
     The generator script already excludes anything ambiguous (proposed for
     two different test_ids) or colliding with an existing alias pointing
-    elsewhere -- what's in this file passed both checks. setdefault() here
+    elsewhere, what's in this file passed both checks. setdefault() here
     is a second, defense-in-depth guarantee of the same rule: a hand-curated
     or earlier-loaded entry can never be silently overwritten by a
     generated one, regardless of what the file contains.
@@ -360,7 +230,7 @@ def resolve_test_id(raw_name: str) -> Optional[str]:
     Returns canonical ID string (e.g. 'HGB') or None if unmapped/unknown.
 
     CHANGED: the lookup used `raw_name.strip().lower()` while every key in
-    ALIAS_MAP is underscore-separated ("white_blood_cell_count") -- including
+    ALIAS_MAP is underscore-separated ("white_blood_cell_count"), including
     the keys _load_reference_db() generates from the curated JSON names. So a
     lookup only ever hit for SINGLE-WORD names: "Haemoglobin" and "Platelets"
     resolved, while "White Blood Cell Count", "Total Cholesterol", "LDL
@@ -382,7 +252,7 @@ def resolve_test_id(raw_name: str) -> Optional[str]:
         return direct
 
     # canonicalize_test_name() strips only non-distinguishing qualifiers
-    # (serum/plasma/urine/24 hour/...) -- see its docstring for what it keeps.
+    # (serum/plasma/urine/24 hour/...), see its docstring for what it keeps.
     stripped = _alias_key(canonicalize_test_name(raw_name))
     return ALIAS_MAP.get(stripped)
 
@@ -410,57 +280,25 @@ def get_reference_data(test_id: str) -> Optional[Dict[str, Any]]:
 
 
 # --------------------------------------------------------------------------
-# NEW: canonical name normalization, shared by every tier's ID synthesis
-# --------------------------------------------------------------------------
-# CHANGED: pdf_parser.py and llm_extractor.py each used to slug the FULL raw
-# test name verbatim into a synthetic test_id when resolve_test_id() found
-# no alias. That meant "Creatinine", "Creatinine, Serum" and "Creatinine
-# (24 hour)" produced three different synthetic IDs, and dedupe_results()
-# below (which keys on test_id) never merged them - the same analyte showed
-# up multiple times with different values in the output. This strips only
-# qualifiers that describe HOW/WHERE the sample was taken, not WHAT is
-# being measured - it deliberately leaves clinically-distinguishing
-# qualifiers alone, e.g. "Direct Bilirubin" / "Total Bilirubin" /
-# "Unconjugated Bilirubin" are genuinely different values and must stay
-# separate test_ids.
+# Strips only how/where a sample was taken, not what's measured, so
+# "Creatinine (24 hour)" and "Creatinine, Serum" dedupe to one test_id.
 _NON_DISTINGUISHING_QUALIFIERS = re.compile(
     r"\b(serum|plasma|urine|urinary|edta\s*blood|whole\s*blood|fluoride\s*plasma|"
     r"\d+\s*hour(?:s)?|qualitative|quantitative|random\s*sample)\b",
     re.IGNORECASE,
 )
 
-# BUG FOUND (PK0016.pdf, a different lab's urinalysis format): this lab
-# prints "Urinary pH" / "Urinary Specific Gravity" where Sterling Accuris
-# printed bare "pH" / "Specific Gravity" and "Blood [In Urine]" where
-# Sterling printed bare "Red Cells" - two different naming conventions for
-# the exact same tests, producing different synthetic ids (URINARY_PH vs
-# PH; BLOOD_IN vs RED_CELLS) that neither ALIAS_MAP nor
-# SPECIMEN_GROUNDING_ALIASES recognised as the same thing. Stripping
-# "urinary" (above) collapses the first case onto the ids already handled.
-# This strips the "[In Urine]" / "(In Blood)" bracketed specimen note some
-# labs append, collapsing the second case the same way.
+# BUG FOUND (PK0016.pdf): strips "[In Urine]"-style bracketed notes some
+# labs append, which produced a different synthetic id than other labs'
+# bare naming for the same test.
 _BRACKETED_SPECIMEN_NOTE = re.compile(
     r"[\[\(]\s*in\s+(urine|blood|serum|plasma|stool|csf)\s*[\]\)]",
     re.IGNORECASE,
 )
 
 
-# BUG FOUND (PK0016.pdf, live testing): stripping "urinary"/"urine" as a
-# non-distinguishing qualifier is correct for most tests ("Urinary pH" and
-# "pH" really are the same concept) but wrong for a small set of short,
-# genuinely ambiguous abbreviations where the specimen IS the distinguishing
-# fact, not noise -- "RBC" means a systemic blood erythrocyte count on a
-# CBC, and something entirely different (red cells visible in urine
-# microscopy, i.e. haematuria) on a urinalysis. Collapsing "Urinary RBC" to
-# bare "RBC" fed the RAG retrieval query (rag_service.retrieve_context,
-# which appends "({test_id}) blood test result meaning" whenever a test_id
-# is present, and separately boosts any corpus chunk tagged with that id)
-# a blood-context id for a urine test, so the explanation shown described
-# systemic blood-cell production instead of blood/cells in urine -- the
-# same class of collision Section 2.5 already guards against for
-# LLM-generated aliases (e.g. "AST"), just reached here via qualifier
-# stripping instead. "WBC" carries the identical ambiguity for the same
-# reason and is guarded pre-emptively, not because it was observed to fail.
+# BUG FOUND (PK0016.pdf): stripping "urine" collapsed "Urinary RBC" onto
+# bare "RBC", a blood-context id, describing the wrong test entirely.
 _AMBIGUOUS_WITHOUT_SPECIMEN = {"RBC", "WBC"}
 _URINE_QUALIFIER_RE = re.compile(r"\b(urine|urinary)\b", re.IGNORECASE)
 
@@ -501,15 +339,9 @@ _LT_RE = re.compile(r"[<\u2264]\s*(-?\d+\.?\d*)")
 _GT_RE = re.compile(r"[>\u2265]\s*(-?\d+\.?\d*)")
 _STRAY_DECIMAL_RE = re.compile(r"(\d)\s+\.\s*(\d)")  # fixes "6 .0" -> "6.0"
 
-# CHANGED: many printed reference ranges are actually several NAMED bands,
-# not one simple low-high pair - e.g. Cholesterol's "Desirable: <200 /
-# Borderline High: 200-239 / High: >240", or HbA1c's "Non-Diabetes: <5.7% /
-# Pre-Diabetes: 5.7-6.4% / Diabetes: >6.5%". The naive single-pass regex
-# above just grabs whichever "number - number" pattern it finds FIRST in
-# the whole string - for Cholesterol that's "200-239" (the *borderline
-# high* band), so a genuinely healthy 189 mg/dL got flagged "Below normal
-# range" in production. _parse_labeled_bands looks for a band whose label
-# reads as the healthy/reference band and uses ONLY that band's numbers.
+# CHANGED: some ranges are several named bands, not one low-high pair (e.g.
+# Cholesterol's Desirable/Borderline/High). A naive regex grabbed whichever
+# band came first, flagging a healthy result as abnormal.
 _NORMAL_BAND_KEYWORDS = (
     "desirable", "normal", "optimal", "sufficiency", "negative",
     "non-reactive", "non reactive", "non-diabetes", "non diabetes",
@@ -521,19 +353,9 @@ _BAND_SEGMENT_RE = re.compile(
     r"(?=(?:[A-Za-z][A-Za-z \-/]{1,40}?\s*:)|$)"
 )
 
-# BUG FOUND (Sterling Accuris sample report, HDL Cholesterol): printed range
-# was "Low: <40.0 / High: >60.0" - HDL is a protective marker where higher is
-# GOOD, so the lab prints "High" as the desirable band, not the "abnormal"
-# one. _parse_labeled_bands above only recognises bands labelled with
-# desirable/normal/optimal/etc, so neither "Low" nor "High" matched and this
-# fell through to the plain single-range regex, which grabbed "<40.0" as a
-# lone upper bound - flagging a healthy 60.0 mg/dL result as "Above normal
-# range" (HIGH), directly contradicting the app's own explanation text that
-# higher HDL is protective.
-# This handles the specific "Low: <X / High: >Y" two-band shape: only the
-# Low threshold is treated as a flagging bound (below it is genuinely LOW);
-# the High band is the protective/desirable extreme for this shape and is
-# never flagged as abnormal by this generic parser.
+# BUG FOUND (HDL Cholesterol): HDL is protective (higher is good), so a lab
+# labels "High" as the desirable band, not the abnormal one, which the
+# generic parser above didn't recognise. Handles that specific shape.
 def _parse_low_high_labeled_bands(ref_range: str) -> Optional[Tuple[Optional[float], Optional[float]]]:
     segments = _BAND_SEGMENT_RE.findall(ref_range)
     if len(segments) != 2:
@@ -566,11 +388,8 @@ def _parse_labeled_bands(ref_range: str) -> Optional[Tuple[Optional[float], Opti
 
     for label, expr in segments:
         label_l = label.strip().lower()
-        # CHANGED: plain substring containment ("sufficiency" in label)
-        # false-matches "Insufficiency" too, since "sufficiency" sits
-        # inside it with no word break - which would have picked Vitamin
-        # D's Insufficiency band (10-30) instead of Sufficiency (30-100).
-        # Word-boundary matching avoids that.
+        # CHANGED: word-boundary match, plain substring check false-matched
+        # "Insufficiency" as containing "sufficiency".
         if not any(re.search(rf"\b{re.escape(k)}\b", label_l) for k in _NORMAL_BAND_KEYWORDS):
             continue
         m = _RANGE_RE.search(expr)
@@ -617,9 +436,8 @@ def parse_ref_range_string(ref_range: Optional[str]) -> Optional[Tuple[Optional[
     cleaned = _STRAY_DECIMAL_RE.sub(r"\1.\2", ref_range.strip())
 
     # CHANGED: try labeled-band parsing first (see _parse_labeled_bands
-    # above). Only takes effect when the text actually has 2+ "label:
-    # value" bands; otherwise returns None immediately and everything
-    # below runs exactly as before.
+    # above). Only takes effect when the text actually has 2+ "label: value"
+    # bands;
     banded = _parse_labeled_bands(cleaned)
     if banded is not None:
         return banded
@@ -779,13 +597,13 @@ def dedupe_results(results: List[dict]) -> List[dict]:
 
     BUG FOUND (LabReport.pdf, a QuantiFERON-TB panel): keying on test_id
     ALONE used to collapse genuinely different rows that happen to share
-    one canonical test_id -- confirmed directly on this report, where "TB
+    one canonical test_id, confirmed directly on this report, where "TB
     NIL Tube", "TB Antigen Tube", and "TB Ag Minus NIL" are three distinct
     real measurements that all resolve to the single "TUBERCULOSIS"
     reference entry (there's one generic screening page for the whole
     panel, not one per sub-component). Deduping by test_id alone kept only
     one of the three and silently discarded the other two, even though
-    they were never duplicates of each other -- test_id-alone dedup is
+    they were never duplicates of each other, test_id-alone dedup is
     still correct and needed for the case this function was built for (the
     SAME row found twice, once per extraction tier), it just needed a
     second key to tell "the same row, twice" apart from "two different

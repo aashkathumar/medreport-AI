@@ -10,10 +10,6 @@ from app.services.reference_db import resolve_test_id, dedupe_results, canonical
 # In app/services/llm_extractor.py
 
 # CHANGED: the prompt now demands the printed reference range verbatim.
-# "status" is still requested as a fallback for purely qualitative results
-# (Negative/Clear/etc.), but for anything numeric it gets OVERRIDDEN downstream
-# by reference_db.finalize_result() comparing against ref_range - so the LLM's
-# own clinical judgement is no longer the source of truth for numeric results.
 EXTRACTION_SYSTEM = """You are an expert clinical laboratory data extraction system.
 Extract ONLY actual medical diagnostic tests and their measured results.
 IGNORE ALL administrative metadata, patient info, doctor names, and barcodes.
@@ -55,16 +51,11 @@ Return valid JSON in this EXACT structure:
 
 # CHANGED: pages are now batched instead of hard-capped at 5. A 15-20 page
 # multi-panel pathology report (thyroid/lipid/vitamin/HbA1c/HIV panels etc.
-# on separate pages) is common, and the old cap silently discarded every
-# result past page 5 with no signal to the caller.
 VISION_BATCH_SIZE = 4  # pages per LLM call - keeps each request's payload/
                         # token size reasonable and avoids degraded accuracy
                         # from cramming too many images into one call.
 RENDER_DPI = 200        # raised from 150 for better small-print fidelity
                         # (units/method footnotes are often tiny grey text);
-                        # kept well under 300 to limit image-token cost on
-                        # free-tier vision APIs - tune based on observed
-                        # misread rates vs. rate-limit headroom.
 
 
 def pdf_to_base64_images(pdf_bytes: bytes, dpi: int = RENDER_DPI) -> list[str]:
@@ -131,9 +122,6 @@ def extract_with_vision(pdf_bytes: bytes, provider: str = None) -> list[dict]:
 
     # CHANGED: batches were issued strictly serially. A 19-page report is 5
     # batches carrying ~2.6 MB of base64 page images each (12.9 MB total);
-    # back-to-back that is minutes of mostly-upload wall time before the user
-    # sees anything. They are independent, so fan them out (bounded, to stay
-    # inside free-tier rate limits) and keep page order in the merged output.
     starts = list(range(0, len(images), VISION_BATCH_SIZE))
     workers = max(1, min(settings.llm_max_concurrency, len(starts)))
     batched: list[list[dict]] = [[] for _ in starts]
@@ -203,14 +191,9 @@ def _format_extracted_results(raw_results: list) -> list[dict]:
             continue
 
         resolved = resolve_test_id(name)
-        # CHANGED: previously slugged the full raw name verbatim, so
-        # "Creatinine", "Creatinine, Serum" and "Creatinine (24 hour)"
-        # produced three different synthetic IDs and dedupe_results()
-        # never merged them - each survived as a separate "test" in the
-        # output. canonicalize_test_name() strips only non-distinguishing
-        # sample-type/method/timeframe qualifiers (shared with
-        # pdf_parser.py so every tier agrees on the same ID for the same
-        # analyte).
+        # CHANGED: the prompt now demands the printed reference range
+        # verbatim. "status" is still requested as a fallback for purely
+        # qualitative results (Negative/Clear/etc.), but for anything numeric
         test_id = resolved or canonicalize_test_name(name)
         raw_ref_range = r.get("ref_range")
 

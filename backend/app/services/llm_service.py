@@ -17,20 +17,17 @@ from app.services.llm_providers import (
 from app.services.rag_service import retrieve_context
 from app.services.reference_db import get_reference_data, grounding_test_id
 
-# ETHICS CONSTRAINT (Chris Clarke): this branch never asks the model to
-# interpret the patient's specific value/status against a reference range --
-# that's the exact "clinical decision support" framing he flagged. Every
-# field asked for here is deliberately GENERAL to the test itself, not tied
-# to whether this particular patient's number is high, low, or normal.
+# ETHICS CONSTRAINT: never ask the model to judge the patient's own reading
+# against a range, that's the out-of-scope "clinical decision support" case.
 SYSTEM = """You are an expert health literacy assistant helping patients understand what their laboratory tests are and how to support their health, based on NHS UK and NIH MedlinePlus standards.
 
-For each test, write GENERAL, test-level guidance -- never referencing the patient's own specific value, whether it is high/low/normal, or any reference range:
+For each test, write GENERAL, test-level guidance, never referencing the patient's own specific value, whether it is high/low/normal, or any reference range:
 1. what_it_measures: Explain clearly what the biomarker does in the body.
-2. lifestyle_suggestions: Provide 2-3 evidence-based dietary, hydration, or activity habits that generally support keeping this measurement in a healthy range, grounded in NHS/NIH guidance -- phrased as good general practice for anyone, not as a response to this patient's result.
+2. lifestyle_suggestions: Provide 2-3 evidence-based dietary, hydration, or activity habits that generally support keeping this measurement in a healthy range, grounded in NHS/NIH guidance, phrased as good general practice for anyone, not as a response to this patient's result.
 3. gp_question: Formulate a general, constructive question a patient could ask their GP about this test.
 
 STRICT RULES:
-- Do NOT mention, infer, or imply the patient's own value, or whether it is elevated, low, normal, or abnormal, anywhere in your answer. This tool never states what a specific result means -- only what the test is and how to generally support that measurement.
+- Do NOT mention, infer, or imply the patient's own value, or whether it is elevated, low, normal, or abnormal, anywhere in your answer. This tool never states what a specific result means, only what the test is and how to generally support that measurement.
 - Base every explanation ONLY on the facts given in that test's own "Reference context" line. Do NOT pull in facts, causes, or figures that belong to a different test in this batch, even if they seem related.
 - Do NOT introduce any medical fact, cause, condition, figure, or reference range that is not present in the reference context for that specific test. If the context does not cover something, omit it rather than inferring or guessing.
 - Write in your own words - paraphrase the reference context, do not copy its sentences verbatim.
@@ -48,25 +45,14 @@ def _build_grounding(test: TestResult) -> Dict[str, Any]:
     sources: List[Dict[str, str]] = []
     source_labels: List[str] = []
 
-    # BUG FOUND: this curated-JSON lookup used test.test_id directly, before
-    # any specimen redirect. "Urinary Glucose" resolves (via ALIAS_MAP) to
-    # the same test_id as blood glucose - "GLUCOSE" - and blood_tests.json
-    # has a curated entry for it, so this branch matched FIRST and returned
-    # "Blood glucose measures the amount of sugar in your blood..." as the
-    # explanation for a urine dipstick result, where the clinical meaning is
-    # entirely different (presence itself is abnormal, not a concentration
-    # threshold). The RAG retrieval below already applied the specimen
-    # redirect; this curated-lookup step - checked first and never
-    # overridden - did not, so the fix had to close this path too.
+    # Used to skip the specimen redirect, so urine glucose matched blood
+    # glucose's curated entry and got the wrong clinical meaning explained.
     resolved_id = grounding_test_id(test.test_id, specimen=getattr(test, "specimen", None))
 
     ref = get_reference_data(resolved_id)
     if ref:
-        # ETHICS CONSTRAINT (Chris Clarke): the low_means/high_means curated
-        # blocks exist to explain a LOW or HIGH result specifically -- exactly
-        # the per-status clinical interpretation this branch must not
-        # produce. Only the general plain_english description is used here,
-        # regardless of this test's actual status.
+        # ETHICS CONSTRAINT: skip low_means/high_means, only the general
+        # description is used, regardless of this test's actual status.
         curated_text = ref.get("plain_english", "")
         if curated_text:
             label = ref.get("source", "NHS UK / NIH MedlinePlus")
@@ -91,25 +77,15 @@ def _build_grounding(test: TestResult) -> Dict[str, Any]:
         if url and not any(s.get("url") == url for s in sources):
             sources.append({"label": label, "url": url})
 
-    # BUG FOUND: this used to default to a non-empty placeholder string
-    # ("General NHS/NIH medical reference guidelines.") when nothing real was
-    # found, which made every test - including ones with zero relevant
-    # grounding (e.g. "P2 Peak", an HPLC electrophoresis peak with no
-    # NHS/NIH coverage at all) - look grounded to the caller. The LLM was
-    # then asked to explain it anyway with no real facts to draw on, and
-    # produced a confident but entirely wrong explanation (borrowed from an
-    # unrelated test - PSA - in the same batch). `grounded` now reports
-    # honestly whether real reference material was found, so the caller can
-    # skip the LLM call instead of inviting fabrication.
+    # Used to default to a non-empty placeholder even with zero real
+    # grounding, which invited the LLM to fabricate (e.g. "P2 Peak" as PSA).
     unique_labels = sorted(set(source_labels))
     return {
         "text": "\n".join(blocks),
         "sources": sources,
         "source_label": " / ".join(unique_labels) if unique_labels else "NHS UK / NIH MedlinePlus",
         "grounded": bool(blocks),
-        # Whether any RAG passage (as opposed to only the small curated JSON)
-        # backs this test -- lets callers tell corpus-grounded tests apart
-        # from ones resting solely on the 21-entry static table.
+        # Whether a real RAG passage backs this, vs. only the curated JSON.
         "has_rag": has_rag,
     }
 
@@ -118,18 +94,9 @@ def _coerce_details(details: dict) -> dict:
     """Normalises one LLM explanation object into the shapes ExplainedResult
     requires, before pydantic ever sees it.
 
-    BUG FOUND while benchmarking alternative OpenRouter models: the schema
-    declares `lifestyle_suggestions: List[str]`, but models are only *asked*
-    for a JSON array -- several free models (liquid/lfm-2.5-2.6b reproducibly)
-    return a single STRING there instead. ExplainedResult() was constructed
-    unguarded, so pydantic raised ValidationError, which nothing caught: the
-    exception escaped explain_all_test_results_batched() and failed the WHOLE
-    upload with a 500, discarding every other successfully explained test.
-    One badly-shaped field from one model = no report at all.
-
-    Rather than crash on a cosmetic shape difference, coerce what is
-    recoverable and drop what is not, so a malformed field degrades to the
-    deterministic fallback for that field alone.
+    Some models return lifestyle_suggestions as a string instead of a list,
+    which used to crash the whole upload. This coerces what's recoverable
+    instead, so one malformed field degrades to fallback copy, not a 500.
     """
     if not isinstance(details, dict):
         return {}
@@ -155,21 +122,8 @@ def _coerce_details(details: dict) -> dict:
     return clean
 
 
-# A standalone quantity: a run of digits (optionally comma-grouped, optionally
-# decimal) NOT adjacent to a letter or digit. The boundary conditions are the
-# whole point -- they keep analyte names out of the figure check. "T3", "T4",
-# "B12", "P24" and "CO2" are NAMES, not numbers, and an earlier string-based
-# check flagged them as invented figures and threw away correct explanations.
-# Conversely "10^9/L" DOES read as the two quantities 10 and 9, because "^"
-# and "/" are non-alphanumeric -- so callers must seed allowed_numbers with
-# the unit's own digits (see explain_all_test_results_batched).
-#
-# The second lookbehind covers hyphenated NAMES: "omega-3", "omega-6",
-# "COVID-19". A hyphen is non-alphanumeric, so the first lookbehind alone let
-# "omega-3" read as the quantity 3, and correct dietary advice ("increase your
-# intake of omega-3 fatty acids") was rejected as an unsourced figure. A digit
-# after "letter-" is part of a name; after "digit-" it is a real range bound,
-# so "6-8 glasses" and "10-15 minutes" still parse as quantities.
+# A standalone quantity, not adjacent to a letter/digit, so "T3", "B12", "CO2"
+# read as names, not numbers, but "10^9/L" still splits into 10 and 9.
 _NUM_RE = re.compile(r"(?<![A-Za-z0-9])(?<![A-Za-z]-)\d[\d,]*(?:\.\d+)?(?![A-Za-z0-9])")
 
 # Tokens too generic to prove topical relatedness either way.
@@ -200,26 +154,9 @@ def _numbers_in(text: str) -> set:
     return out
 
 
-# Units that make a figure a GENERIC LIFESTYLE quantity rather than a clinical
-# one: "150 minutes of activity a week", "6-8 glasses of water", "14 units of
-# alcohol", "5 a day". These are public-health advice that applies to everyone,
-# carry no per-patient clinical meaning, and are exactly what the SYSTEM prompt
-# above ASKS the model to produce ("2-3 evidence-based dietary, hydration, or
-# activity adjustments").
-#
-# BUG FOUND: the unsourced-figure check below treated these identically to an
-# invented clinical threshold, so any explanation that took the prompt's
-# instruction literally was rejected wholesale and replaced with content-free
-# boilerplate ("Evaluates Cholesterol levels in the body."). Because the model
-# phrases advice differently on each run, a DIFFERENT random ~5 tests were
-# gutted every time -- confirmed by diffing two runs over the same PDF, where
-# HbA1c/Urine Glucose recovered while Cholesterol/LDL-HDL Ratio/HBsAg broke.
-# Non-reproducible output is disqualifying for an evaluated system.
-#
-# Clinical units are deliberately ABSENT from this list -- mg, g, dL, mmol,
-# ng, IU, U/L and bare unit-less thresholds stay fully checked, so the
-# dangerous class this guard was built for ("below 7.3 g/dL requires immediate
-# transfusion", "325 mg ferrous sulphate three times daily") is still caught.
+# Generic lifestyle units ("150 minutes", "6-8 glasses") that used to get
+# rejected as invented clinical figures, gutting a random ~5 tests per run
+# non-reproducibly.
 _LIFESTYLE_UNIT = (
     r"(?:minute|min|hour|hr|day|daily|week|weekly|month|glass|cup|litre|liter|"
     r"pint|portion|serving|piece|step|night|session|time|unit)"
@@ -252,29 +189,10 @@ def _verify_grounded(
     context: str,
     allowed_numbers=None,
 ) -> Tuple[bool, str]:
-    """Checks one generated explanation against the reference context it was
-    supposed to be built from. Returns (ok, reason).
-
-    This is the post-hoc half of the anti-fabrication design: the system
-    prompt ASKS the model to stay inside the context, and this verifies that
-    it did. Two failure modes are caught, both seen in production:
-
-      1. UNSOURCED FIGURES -- a threshold, cutoff or dosage that appears
-         nowhere in the context ("below 7.3 g/dL requires immediate
-         transfusion", "325 mg ferrous sulphate three times daily"). This is
-         the dangerous class: specific, actionable, and invented. Checked
-         exactly rather than statistically -- every standalone quantity must
-         be traceable to the context, to the patient's own result/range, or
-         to the unit string.
-
-      2. TOPIC DRIFT -- prose about a different biomarker entirely, which is
-         how "P2 Peak" came to be explained as PSA. Caught as a total absence
-         of shared subject-matter vocabulary with the context.
-
-    A coarse guard by design: it is meant to catch confident invention, not to
-    grade prose. Anything it rejects falls back to deterministic copy, so a
-    false positive costs wording, while a false negative could mislead a
-    patient about their own health.
+    """Checks a generated explanation against its source context. Catches
+    unsourced figures (invented thresholds/dosages) and topic drift (prose
+    about a different test, e.g. "P2 Peak" explained as PSA). A rejection
+    falls back to deterministic copy rather than risking misleading text.
     """
     generated = (generated or "").strip()
     if not generated:
@@ -313,22 +231,9 @@ def _verify_grounded(
 
 
 def _references_other_test(gp_question: str, own_name: str, other_names: List[str]) -> Optional[str]:
-    """Catches a gp_question that names a DIFFERENT test from this batch.
-
-    BUG FOUND (Sterling Accuris report, Nitrite): Nitrite's gp_question read
-    "Could you explain the significance of the pus cells and epithelial cells
-    in my urinalysis results?" -- correctly cited, but about two other tests
-    later in the same batch, not Nitrite. _verify_grounded did not catch this
-    because it checks the FOUR generated fields as one concatenated blob:
-    Nitrite's other three fields were genuinely on-topic, so the blob as a
-    whole shared plenty of vocabulary with the nitrite reference context, and
-    "pus cells"/"epithelial cells" introduced no unsourced number either. A
-    single contaminated field rode through on the correctness of the rest.
-
-    This checks gp_question in isolation against every OTHER test's name in
-    the batch: if a batch-mate's distinguishing words (its name minus
-    whatever words it shares with the test actually being explained) all
-    appear in the gp_question, the field is describing that other test.
+    """Catches a gp_question naming a different test from the same batch.
+    _verify_grounded missed this since it checks all fields as one blob;
+    this checks gp_question alone against every other test's name.
     """
     own_tokens = _content_tokens(own_name)
     q_tokens = _content_tokens(gp_question)
@@ -343,19 +248,6 @@ def _references_other_test(gp_question: str, own_name: str, other_names: List[st
 
 # Key -> (unix time the circuit re-closes, reason). Module-level and
 # lock-guarded because batches run concurrently in a thread pool and share it.
-#
-# BUG FOUND: this used to be keyed on the bare provider name for EVERY kind
-# of failure, so one bad/slow MODEL benched every sibling model on that
-# provider for a full cooldown too. On a provider with many chain entries
-# (Cloudflare: 15, Mistral: 6, Cohere: 11+3) that took a lot of healthy
-# capacity offline over one flaky model -- the likely cause of an 85-test
-# report taking 885s instead of the usual tens of seconds. Now a key can be
-# EITHER a bare provider name (a provider-wide trip) or a full "provider:
-# model" entry (a single-model trip) -- see _is_provider_wide_failure for
-# which failures get which scope. _circuit_open checks both so a
-# provider-wide trip still blocks every model under it, matching the
-# original behaviour for the case the breaker was actually built around
-# (Mistral's documented 500-then-522 outage).
 _CIRCUIT: Dict[str, Tuple[float, str]] = {}
 _CIRCUIT_LOCK = threading.Lock()
 
@@ -363,9 +255,9 @@ _CIRCUIT_LOCK = threading.Lock()
 def _is_provider_wide_failure(reason: str) -> bool:
     """Whether a failure reflects the PROVIDER/ACCOUNT rather than one model.
 
-    A 429 (shared account rate limit -- e.g. Groq's per-account TPM, or
+    A 429 (shared account rate limit, e.g. Groq's per-account TPM, or
     Cohere's shared 20/min trial pool across all its models), a 5xx
-    (server-side outage), or a connection-level failure (DNS/refused -- the
+    (server-side outage), or a connection-level failure (DNS/refused, the
     endpoint itself is unreachable, regardless of which model was asked
     for) genuinely affect every model on that provider, so those still
     bench the whole provider. A plain timeout is treated as model-specific:
@@ -433,7 +325,7 @@ class LLMUnavailableError(RuntimeError):
     """No provider in the chain could serve this request.
 
     A distinct type so callers can tell "every provider failed" apart from a
-    bug in our own code -- previously both surfaced as a bare RuntimeError.
+    bug in our own code, previously both surfaced as a bare RuntimeError.
     """
 
 
@@ -453,19 +345,19 @@ def _build_chain(
 
     BUG FOUND: every batch used the SAME chain order (mistral first, always).
     Under concurrency this meant every one of the (up to 8) simultaneously-
-    fired batches hit Mistral first, all at once -- the free-tier key's rate
+    fired batches hit Mistral first, all at once, the free-tier key's rate
     limit got hit by the concurrency itself, not by total request volume,
     while Groq/OpenRouter/Gemini sat idle until Mistral failed. `chain_offset`
     rotates which provider each batch tries FIRST (batch 0 starts at index 0,
     batch 1 at index 1, ...), spreading first-attempt load evenly across all
     configured providers while every batch still has the full chain as
-    fallback -- no batch loses resilience, they just don't all queue behind
+    fallback, no batch loses resilience, they just don't all queue behind
     the same provider at once.
 
     use_reserved=True (retry calls only) puts settings.retry_reserved_chain
     FIRST, ahead of the regular chain. Those entries are never touched by the
     primary wave, so they can't have been circuit-tripped or quota-exhausted
-    by some unrelated batch before the retry gets to them -- they're
+    by some unrelated batch before the retry gets to them, they're
     guaranteed fresh. The regular chain still follows as a fallback if the
     reserve also fails, so a retry is never worse off than before this
     existed, only potentially better.
@@ -496,7 +388,7 @@ def _build_chain(
         if prov not in PROVIDERS or not provider_has_key(prov):
             continue
         if want_vision and not supports_vision(prov):
-            # Guaranteed failure -- don't spend a network round-trip on it.
+            # Guaranteed failure, don't spend a network round-trip on it.
             continue
         if _circuit_open(prov, entry):
             benched.append(entry)       # recently failed; skip while cooling
@@ -506,7 +398,7 @@ def _build_chain(
     # Never let the breaker itself starve a request: if it has benched
     # everything, ignore it and try them all rather than failing outright.
     if not usable and benched:
-        print("All providers have open circuits -- ignoring breaker and retrying.")
+        print("All providers have open circuits, ignoring breaker and retrying.")
         usable = benched
 
     if not usable:
@@ -519,7 +411,7 @@ def _build_chain(
 def _ungrounded_result(test: TestResult) -> ExplainedResult:
     """Honest placeholder for a test with no NHS/NIH grounding at all.
 
-    ETHICS CONSTRAINT (Chris Clarke): no status/range fields exist on
+    ETHICS CONSTRAINT: no status/range fields exist on
     ExplainedResult on this branch (see schemas.py), and the fallback text
     below deliberately never references the patient's own value or status --
     it only says the test isn't covered, same as it would for any patient.
@@ -544,7 +436,7 @@ def _is_transient(exc: Exception) -> bool:
 
     429 / 5xx / timeouts are transient. A 404 (retired model), a 401 (bad key)
     or our own "text-only provider got images" ValueError will fail identically
-    every time -- retrying those just adds latency to a guaranteed failure.
+    every time, retrying those just adds latency to a guaranteed failure.
     """
     text = str(exc).lower()
     if any(marker in text for marker in ("404", "401", "403", "not found", "cannot process image")):
@@ -569,7 +461,7 @@ def call_with_fallback(
     transient failures on the same provider before moving on.
 
     CHANGED (three real bugs):
-      1. `capability` was accepted and then IGNORED -- this always read
+      1. `capability` was accepted and then IGNORED, this always read
          settings.text_fallback_chain, so VISION_FALLBACK_CHAIN was dead
          config that never took effect. Vision extraction was routed down the
          text chain, whose first entry (groq_llama) is text-only and raises on
@@ -579,7 +471,7 @@ def call_with_fallback(
          stopped an image payload being handed to a text-only provider. Now a
          vision request skips text-only providers outright.
       3. settings.llm_max_retries / llm_retry_backoff_sec were defined in
-         config and referenced nowhere -- there was no retry at all. One
+         config and referenced nowhere, there was no retry at all. One
          transient 429 from groq (~5s/batch) permanently demoted the request
          to gemini (~33s/batch). They are honoured here now.
     """
@@ -644,13 +536,13 @@ def _allowed_numbers_for(test: TestResult) -> set:
     """Figures an explanation may legitimately cite without them appearing in
     the reference text: digits belonging to the unit string only.
 
-    ETHICS CONSTRAINT (Chris Clarke): unlike feature/developv4.1, the
+    ETHICS CONSTRAINT: unlike feature/developv4.1, the
     patient's own value and reference bounds are deliberately NOT allowed
-    here -- this branch's output must never cite this patient's specific
+    here, this branch's output must never cite this patient's specific
     number or range at all, so if the model does anyway, the verifier below
     should catch and reject it rather than have this list quietly permit it.
 
-    The unit still matters -- "10^9/L" parses as the two quantities 10 and 9,
+    The unit still matters, "10^9/L" parses as the two quantities 10 and 9,
     so without seeding them a perfectly grounded platelet or WBC explanation
     gets rejected for citing "unsourced figures".
     """
@@ -658,30 +550,7 @@ def _allowed_numbers_for(test: TestResult) -> set:
 
 
 # Cache of VERIFIED explanations (written only after a result passes
-# _verify_grounded + _references_other_test in Phase 3 below). Keyed on the
-# exact result signature, not just the test -- see _cache_key. Repeat
-# uploads of the same PDF and different patients who happen to share a value
-# both skip RAG retrieval AND the LLM entirely on a hit -- the single
-# biggest lever on rate-limit exposure, since a cache hit makes zero network
-# calls and so can never be rate-limited.
-#
-# PERSISTED TO DISK (2026-08-27): was process-lifetime only, so every
-# `uvicorn --reload` restart during a config-tuning session (many, today)
-# silently threw away everything accumulated. Backed by a local JSON file so
-# it survives a restart -- holds no patient identity (see _cache_key: just a
-# test/value/unit/status/specimen signature, the same for any patient with
-# that same result), so this doesn't reopen the report-storage question from
-# earlier -- there is no patient represented in this data at all.
-# Precomputed `what_it_measures` cache -- keyed on canonical test_id ALONE,
-# not the full (test_id, value, unit, status, specimen) signature _cache_key
-# uses. Unlike what_your_result_means/lifestyle_suggestions/gp_question,
-# what_it_measures never depends on the patient's specific value -- "what is
-# hemoglobin" has one correct answer for every report that mentions HGB, so
-# it's generated ONCE per test_id (see scripts/precompute_what_it_measures.py)
-# and reused forever, instead of regenerated per report/value like the rest
-# of the exact-match cache above. Built after the RAG corpus expansion
-# (2026-08-29, 76 -> 408 test_ids) made this worth doing for a genuinely
-# large, stable set of tests.
+# _verify_grounded + _references_other_test in Phase 3 below).
 _WIM_CACHE_FILE = Path(__file__).resolve().parent.parent.parent.parent / "local_data" / "what_it_measures_cache.json"
 _WIM_CACHE: Dict[str, str] = {}
 
@@ -724,20 +593,20 @@ def _cache_load() -> None:
 
 
 def _cache_save() -> None:
-    """Full rewrite on every new entry -- simplest way to avoid a corrupted
+    """Full rewrite on every new entry, simplest way to avoid a corrupted
     file from a partial append, and the expected size (low thousands of
     entries at most, for a dissertation-scale project) makes that cheap.
 
     BUG FOUND (pre-deployment check, 2026-09-01): on AWS Lambda, the code
     directory this path resolves under is baked into the read-only container
-    image -- a cache MISS during a live request (any test not already in the
+    image, a cache MISS during a live request (any test not already in the
     image's precomputed cache) would raise on this write and fail the whole
     explanation call, not just skip caching. Persistence across invocations
     was never available on Lambda anyway (each cold start gets a fresh
     filesystem), so this write was only ever a same-warm-container
     optimisation there; failing to persist should degrade to in-memory-only
     caching for that container's remaining lifetime, not crash the request.
-    Local/GCP deployments (writable filesystem) are unaffected -- the write
+    Local/GCP deployments (writable filesystem) are unaffected, the write
     still happens exactly as before."""
     try:
         _CACHE_FILE.parent.mkdir(exist_ok=True)
@@ -753,12 +622,12 @@ _cache_load()
 def _cache_key(test: TestResult) -> tuple:
     """Exact-match signature.
 
-    ETHICS CONSTRAINT (Chris Clarke) SIMPLIFICATION: on feature/developv4.1,
+    ETHICS CONSTRAINT SIMPLIFICATION: on feature/developv4.1,
     this key included the literal value/status/range, because the generated
     text quoted the patient's specific figure and cited their own reference
-    bounds -- two patients with different values genuinely needed different
+    bounds, two patients with different values genuinely needed different
     cached text. On this branch, generation is deliberately GENERAL to the
-    test (never references the patient's value, status, or range at all -- see
+    test (never references the patient's value, status, or range at all, see
     SYSTEM prompt / _allowed_numbers_for), so every patient with the same
     test_id and specimen gets identical, correctly-grounded text. Keying on
     test_id/specimen alone (like the what_it_measures precompute cache)
@@ -768,7 +637,7 @@ def _cache_key(test: TestResult) -> tuple:
 
     specimen stays in the key: the same test_id can resolve to different
     reference material depending on specimen (e.g. urinary vs blood
-    glucose both alias to GLUCOSE -- see the grounding_test_id redirect in
+    glucose both alias to GLUCOSE, see the grounding_test_id redirect in
     _build_grounding), so collapsing specimen away would let one specimen's
     cached text leak into the other's results.
     """
@@ -816,26 +685,20 @@ def _explain_batch(
     if not to_call:
         return results
 
-    # what_it_measures never depends on the patient's specific value, so
-    # any test_id already in the precomputed cache (see _wim_get /
-    # scripts/precompute_what_it_measures.py) doesn't need the LLM to write
-    # it at all -- the prompt tells it to skip that field for these tests
-    # (smaller output, one fewer thing that can go wrong per test), and the
-    # cached text is force-set onto the response afterward regardless of
-    # what the model did or didn't produce for it.
+    # what_it_measures never depends on the patient's specific value, so any
+    # test_id already in the precomputed cache (see _wim_get /
+    # scripts/precompute_what_it_measures.py) doesn't need the LLM to write it
     precomputed: Dict[str, str] = {}
     tests_summary = []
     for test, grounding in to_call:
-        # ETHICS CONSTRAINT (Chris Clarke): unlike feature/developv4.1, the
-        # patient's value/status/reference-range are deliberately NOT put in
-        # front of the model at all here -- not just "instructed not to use
-        # them," genuinely absent from the prompt, so there's nothing
-        # specific-to-this-patient for it to reference even by accident.
+        # ETHICS CONSTRAINT: the patient's reading/status/range is genuinely
+        # absent from the prompt, not just instructed against, so there's
+        # nothing patient-specific for the model to reference by accident.
         wim = _wim_get(test.test_id)
         note = ""
         if wim:
             precomputed[test.test_id] = wim
-            note = ('\n  NOTE: what_it_measures for this test is already known -- '
+            note = ('\n  NOTE: what_it_measures for this test is already known, '
                     'set it to "" in your response for this test_id, do not write it.')
         tests_summary.append(
             f"- Test ID: {test.test_id} | Name: {test.raw_name}\n"
@@ -872,11 +735,9 @@ Return valid JSON:
             if isinstance(item, dict):
                 tid = item.get("test_id", "")
                 if tid in precomputed:
-                    # Force-set regardless of what the model returned for
-                    # this field -- it was told to leave it blank, but
-                    # trusting that over just overwriting it would mean one
-                    # non-compliant model call away from silently losing the
-                    # field, or a model writing something ungrounded here.
+                    # Force-set regardless of what the model returned for this
+                    # field, it was told to leave it blank, but trusting that
+                    # over just overwriting it would mean one non-compliant
                     item["what_it_measures"] = precomputed[tid]
                 results[tid] = item
     except Exception as e:
@@ -895,7 +756,7 @@ def explain_all_test_results_batched(
     They are completely independent of one another, but were run in a strict
     serial loop. A 79-test report (real Tier-1 output from a 19-page pathology
     PDF) is 14 batches: ~70s serially on the fastest provider, and ~8 MINUTES
-    once a rate-limit pushed it onto a slower one -- long enough to look like
+    once a rate-limit pushed it onto a slower one, long enough to look like
     an infinite hang and to blow past the frontend's timeout, so the user got
     no result at all. Concurrency is bounded by settings.llm_max_concurrency
     so we don't simply trade the latency for 429s.
@@ -924,8 +785,7 @@ def explain_all_test_results_batched(
             if not grounding["grounded"]:
                 # No real NHS/NIH material for this test - explaining it
                 # anyway would mean the LLM inventing content (as happened
-                # with "P2 Peak"/"P3 Peak" being explained as PSA). Skip the
-                # LLM entirely and say so honestly instead.
+                # with "P2 Peak"/"P3 Peak" being explained as PSA).
                 ungrounded.append(test.raw_name)
                 slots.append(_ungrounded_result(test))
                 continue
@@ -941,7 +801,6 @@ def explain_all_test_results_batched(
     # --- Phase 2: fan the batch calls out concurrently ---------------------
     # chain_offset=i rotates which provider each batch tries FIRST (see
     # _build_chain) so the concurrent batches don't all queue behind the same
-    # provider's rate limit at once.
     workers = max(1, min(settings.llm_max_concurrency, len(batches)))
     exp_maps: List[Dict[str, dict]] = [{}] * len(batches)
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -955,12 +814,6 @@ def explain_all_test_results_batched(
     # --- Phase 2.5: retry whatever came back missing ------------------------
     # A batch call can fail outright (every provider unreachable at that
     # moment) or come back missing individual test_ids under the same
-    # pressure. This retry fires AFTER every first-wave batch has finished,
-    # so whatever concurrent load caused the failure has largely cleared --
-    # it's a second attempt timed for when contention has eased, not a blind
-    # immediate retry that would likely hit the same rate limit again. This
-    # is what the 13/6/21-degraded pattern (same PDF, three uploads) was
-    # missing: one attempt, no second chance.
     missing: List[Tuple[TestResult, Dict[str, Any]]] = []
     for slot in slots:
         if isinstance(slot, ExplainedResult):
@@ -985,25 +838,11 @@ def explain_all_test_results_batched(
                 retry_results.update(future.result())
 
     # --- Phase 2.75: one more bounded retry for whatever is STILL missing ---
-    # Phase 2.5 already retries against the reserve chain + primary chain,
-    # but if a test is STILL unexplained after that, the only lever left is
-    # time -- a circuit-tripped provider only reopens after
-    # settings.llm_circuit_cooldown_sec, so a batch retried immediately
-    # after Phase 2.5 would hit the exact same still-open circuits it just
-    # failed against. Rather than give up at that point and show "not
-    # independently verified" while capacity that will be available again
-    # in under a minute sits idle, this waits out the cooldown and tries
-    # once more. Bounded to ONE extra pass, so a genuinely dead chain still
-    # terminates rather than retrying forever.
-    #
-    # Reserve chain NOT reused here (use_reserved defaults to False) -- it
-    # already had its one shot in Phase 2.5. Hammering it a second time
-    # burns through its deliberately small, some-of-it-daily-capped entries
-    # (Gemini, Cloudflare) for no real benefit over giving the primary
-    # chain's 52 entries a second chance once their cooldowns have cleared.
+    # Phase 2.5 already retries against the reserve chain + primary chain, but
+    # if a test is STILL unexplained after that, the only lever left is time
     still_missing = [(test, grounding) for test, grounding in missing if test.test_id not in retry_results]
     if still_missing:
-        print(f"{len(still_missing)} test(s) still missing after the first retry -- "
+        print(f"{len(still_missing)} test(s) still missing after the first retry, "
               f"waiting {settings.llm_circuit_cooldown_sec:.0f}s for circuit cooldowns "
               f"to clear before one final attempt.")
         time.sleep(settings.llm_circuit_cooldown_sec)
@@ -1031,10 +870,7 @@ def explain_all_test_results_batched(
 
         # --- post-hoc grounding check ------------------------------------
         # The system prompt ASKS the model to stay inside the reference
-        # context; this verifies that it did, and throws the explanation away
-        # if it did not. Rejected text is replaced with the same deterministic
-        # copy used when a batch fails outright, so a patient never sees an
-        # invented threshold, cutoff or dosage.
+        # context;
         if details:
             ok, reason = _verify_grounded(
                 _patient_facing_text(details),
@@ -1043,7 +879,7 @@ def explain_all_test_results_batched(
             )
             if not ok:
                 # An ungrounded fact could be anywhere in the text (a wrong
-                # threshold, an invented figure) -- can't trust any of it,
+                # threshold, an invented figure), can't trust any of it,
                 # so the whole explanation is discarded.
                 print(f"Rejected ungrounded explanation for {test.test_id}: {reason}")
                 details = {}
@@ -1051,18 +887,9 @@ def explain_all_test_results_batched(
                 other_names = [t.raw_name for t, _ in batches[batch_index] if t.test_id != test.test_id]
                 contaminated = _references_other_test(details.get("gp_question", ""), test.raw_name, other_names)
                 if contaminated:
-                    # BUG FOUND: this used to discard the WHOLE explanation
-                    # over a bad gp_question alone, even though
-                    # what_it_measures/what_your_result_means/
-                    # lifestyle_suggestions had already passed the grounding
-                    # check above and were perfectly fine -- one contaminated
-                    # sentence demoted a good explanation to the generic
-                    # "please discuss with your GP" fallback. Only
-                    # gp_question is untrustworthy here (it names a sibling
-                    # test from the same batch), so only it needs replacing --
-                    # with the schema's own safe default question, kept in
-                    # sync by reading it directly rather than duplicating the
-                    # string.
+                    # BUG FOUND: this curated-JSON lookup used test.test_id
+                    # directly, before any specimen redirect. "Urinary
+                    # Glucose" resolves (via ALIAS_MAP) to the same test_id as
                     print(f"Replaced contaminated gp_question for {test.test_id}: "
                           f"referenced {contaminated} instead of {test.raw_name}")
                     details["gp_question"] = ExplainedResult.model_fields["gp_question"].default
@@ -1073,30 +900,18 @@ def explain_all_test_results_batched(
 
         if not details:
             # The batch failed, or the model omitted this test_id from its
-            # array. Either way the copy below is canned, not generated --
-            # record it so the UI can say so instead of passing deterministic
-            # filler off as an explanation. `degraded` was previously
-            # initialised, returned, and never once populated.
+            # array.
             degraded.append(test.test_id)
 
         unit_display = (test.unit or "").strip()
 
-        # BUG FOUND (Sterling Accuris report, Nitrite): source/source_urls
-        # were always taken from `grounding`, regardless of whether the
-        # DISPLAYED text actually came from it. When verification rejected
-        # the generated explanation (above) or the model omitted this test
-        # from its batch response, the real NHS/NIH page was still cited
-        # next to generic fallback copy ("Evaluates Nitrite levels in the
-        # body...") that has nothing to do with it - reading as sourced when
-        # nothing shown was. Only attribute a source to text that actually
-        # passed verification.
+        # BUG FOUND: source was cited even when the shown text was fallback
+        # copy, not the verified explanation. Now only cited on a real pass.
         source_label = grounding["source_label"] if details else "Not independently verified"
         source_urls = [s["url"] for s in grounding["sources"]] if details else []
 
-        # ETHICS CONSTRAINT (Chris Clarke): no status/normal_range fields on
-        # ExplainedResult here at all (see schemas.py) -- unlike
-        # feature/developv4.1, there is no "flag this UNKNOWN when
-        # ungrounded/degraded" step needed, because there was never a
+        # ETHICS CONSTRAINT: no status/range fields on this type at all, so
+        # there's no "flag as unknown" step needed, there was never a
         # normal/high/low claim being made in the first place.
         all_explained.append(
             ExplainedResult(
@@ -1122,9 +937,9 @@ def generate_summary(
     provider: str = None,
     model_name: str = None,
 ) -> dict:
-    """ETHICS CONSTRAINT (Chris Clarke) REWRITE: feature/developv4.1's
+    """ETHICS CONSTRAINT REWRITE: feature/developv4.1's
     version built this summary around "Abnormal" results (status HIGH/LOW,
-    with each test's specific value quoted) -- exactly the per-result
+    with each test's specific value quoted), exactly the per-result
     clinical interpretation this branch must not produce, and
     ExplainedResult no longer even carries a status/value-vs-range concept
     to build that list from (see schemas.py).
@@ -1133,7 +948,7 @@ def generate_summary(
     and per-value citation are off the table, there's nothing left for a
     model to meaningfully summarize that isn't already covered by each
     test's own (already-grounded, already-verified) what_it_measures /
-    lifestyle_suggestions / gp_question -- generating fresh top-level prose
+    lifestyle_suggestions / gp_question, generating fresh top-level prose
     would only reintroduce the same fabrication risk `_verify_grounded`
     exists to catch, for no real benefit. Instead this reuses real,
     already-verified per-test content deterministically. No LLM call means

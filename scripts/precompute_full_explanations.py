@@ -7,9 +7,9 @@ _cache_get()/_explain_batch() already check first, before any LLM call.
 
 Why this exists alongside precompute_what_it_measures.py: that script only
 ever covers ONE of the four fields. _EXPLANATION_CACHE already covers all
-four -- keyed on (test_id, specimen) alone in this branch, since nothing
+four, keyed on (test_id, specimen) alone in this branch, since nothing
 generated here depends on the patient's specific value (see _cache_key's
-docstring) -- but it is only ever populated REACTIVELY, the first time a
+docstring), but it is only ever populated REACTIVELY, the first time a
 real report happens to mention a given test. This script does the same
 work proactively, for the whole known-covered set, so the FIRST real
 report to ever mention any of these ~407 tests gets a cache hit (zero LLM
@@ -31,10 +31,9 @@ from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_ROOT / "backend"))
-# Same cwd fix as precompute_what_it_measures.py -- Settings.model_config
-# loads .env relative to the CURRENT working directory, not this file's
-# location, so running from the repo root would silently load zero
-# provider keys otherwise.
+# Same cwd fix as precompute_what_it_measures.py, Settings.model_config loads
+# .env relative to the CURRENT working directory, not this file's location, so
+# running from the repo root would silently load zero provider keys otherwise.
 os.chdir(_ROOT / "backend")
 
 from app.models.schemas import RangeStatus, TestResult  # noqa: E402
@@ -46,14 +45,13 @@ _DATA_DIR = _ROOT / "data"
 _CACHE_FILE = _ROOT / "local_data" / "explanation_cache.json"
 
 # Mirrors llm_service.SYSTEM's instructions exactly, so precomputed text is
-# held to the identical standard as a live batch call would be -- this is
-# not a looser or stricter prompt, just the same one issued once per test_id
-# instead of once per report.
+# held to the identical standard as a live batch call would be, this is not a
+# looser or stricter prompt, just the same one issued once per test_id instead
 SYSTEM = """You are an expert health literacy assistant helping patients understand what their laboratory tests are and how to support their health, based on NHS UK and NIH MedlinePlus standards.
 
-For the given test, write GENERAL, test-level guidance -- never referencing any specific patient value, whether it is high/low/normal, or any reference range:
+For the given test, write GENERAL, test-level guidance, never referencing any specific patient value, whether it is high/low/normal, or any reference range:
 1. what_it_measures: Explain clearly what the biomarker does in the body.
-2. lifestyle_suggestions: Provide 2-3 evidence-based dietary, hydration, or activity habits that generally support keeping this measurement in a healthy range, grounded in NHS/NIH guidance -- phrased as good general practice for anyone, not as a response to any particular result.
+2. lifestyle_suggestions: Provide 2-3 evidence-based dietary, hydration, or activity habits that generally support keeping this measurement in a healthy range, grounded in NHS/NIH guidance, phrased as good general practice for anyone, not as a response to any particular result.
 3. gp_question: Formulate a general, constructive question a patient could ask their GP about this test.
 
 STRICT RULES:
@@ -157,11 +155,8 @@ def main() -> int:
     force = "--force" in sys.argv
     cache = {} if force else load_cache()
     ids = covered_test_ids()
-    # specimen=None matches the default TestResult.specimen used for the
-    # vast majority of tests; specimen-redirected variants (e.g. urine
-    # glucose vs blood glucose, both aliasing to GLUCOSE) still fall back to
-    # a live call the first time, same as today -- a deliberately smaller
-    # scope than trying to enumerate every specimen variant up front.
+    # specimen=None matches the default TestResult.specimen used for the vast
+    # majority of tests; specimen-redirected variants (e.g.
     todo = [t for t in ids if (t, None) not in cache]
 
     print(f"{len(ids)} test_ids covered by the corpus, {len(todo)} to precompute "

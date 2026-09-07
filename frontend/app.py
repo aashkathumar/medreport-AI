@@ -8,14 +8,9 @@ import requests
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 from theme import inject as inject_theme
 
-# BUG FOUND (recurring): running `streamlit run App.py` directly, instead
-# of the real entry point `streamlit run main.py`, used to half-work --
-# no error, just a lone page missing the Results/History nav and the
-# explicit "App" title override from main.py's st.navigation() call,
-# which looked subtly broken (most visibly: a lowercase "app" nav label
-# derived from whatever casing was typed at launch) rather than obviously
-# wrong. main.py sets this flag before running; if it's missing, this file
-# was launched directly, so stop with a message instead of half-rendering.
+# BUG FOUND (recurring): running `streamlit run App.py` directly, instead of
+# the real entry point `streamlit run main.py`, used to half-work -- no error,
+# just a lone page missing the Results/History nav and the explicit "App"
 if not st.session_state.get("_launched_via_main"):
     st.error(
         "This page was opened directly. Please run the app with "
@@ -27,7 +22,7 @@ if not st.session_state.get("_launched_via_main"):
 # Set MEDREPORT_API_URL as an env var / Streamlit secret when deployed to the cloud.
 API = os.environ.get("MEDREPORT_API_URL", "http://localhost:8000/api/v1")
 
-# CHANGED: st.set_page_config() moved to main.py -- with st.navigation()
+# CHANGED: st.set_page_config() moved to main.py, with st.navigation()
 # (see main.py), it must be called once in the entry script, before
 # st.navigation()/pg.run(), not repeated in each page.
 inject_theme()
@@ -37,7 +32,7 @@ if "user_id" not in st.session_state:
 if "report" not in st.session_state:
     st.session_state.report = None
 if "session_reports" not in st.session_state:
-    # Reports generated during THIS browser session only -- nothing is
+    # Reports generated during THIS browser session only, nothing is
     # persisted server-side (see routes.py), so this list is the only place
     # "history" exists, and it's gone the moment the tab closes.
     st.session_state.session_reports = []
@@ -51,13 +46,9 @@ if "upload_error" not in st.session_state:
 with st.sidebar:
     st.header("Your Profile")
     st.session_state.profile["age"] = st.number_input("Age", min_value=16, max_value=90, value=30, step=1)
-    # CHANGED: format_func changes only the DISPLAYED label -- "Prefer Not
-    # To Say" / "Omnivore" etc. -- while st.session_state still gets the
-    # original lowercase/underscored value ("prefer_not_to_say",
-    # "omnivore", ...) unchanged, exactly as the backend expects it
-    # (reference_db.py lowercases `sex` before matching, and `diet_type`
-    # goes straight into an LLM prompt as plain text -- neither needed the
-    # display formatting, but both would have been a real risk to touch).
+    # CHANGED: st.set_page_config() moved to main.py -- with st.navigation()
+    # (see main.py), it must be called once in the entry script, before
+    # st.navigation()/pg.run(), not repeated in each page.
     st.session_state.profile["sex"] = st.selectbox(
         "Sex", ["prefer_not_to_say", "male", "female"],
         format_func=lambda x: x.replace("_", " ").title(),
@@ -69,25 +60,14 @@ with st.sidebar:
     st.caption("Your profile personalises the lifestyle recommendations.")
     st.divider()
 
-    # No login, no directory to pick from -- just a label for this session's
-    # reports. Gone (along with everything else in session_state) the moment
-    # this tab closes. `key=` keeps it correctly sticky within the session.
-    # CHANGED: "(this session only)" moved out of the label and into a
-    # caption below the field, on request.
+    # No login, no directory to pick from, just a label for this session's
+    # reports.
     st.text_input("Name", key="user_id")
     st.caption("Noted only for this session, not saved anywhere.")
 
 # Original illustration (not traced from any reference image) in the same
-# visual language as the moodboard the user shared -- a card, floating
-# accent blobs, colour-coded rows -- but drawn around what this app
-# actually shows a patient: a report with status-flagged result rows and a
-# pulse-line motif, rather than a generic doctor/calendar scene.
-# BUG FOUND: the <svg> tag's OWN inline style had a second, separate
-# max-width: 360px cap, independent of the outer container div's max-width
-# (raised to 480px in an earlier round) -- the SVG's own cap was the
-# tighter of the two, so that earlier "make it bigger" fix had no visible
-# effect; the container just had more empty space around a still-360px
-# image. Raised to match.
+# visual language as the moodboard the user shared, a card, floating accent
+# blobs, colour-coded rows, but drawn around what this app actually shows a
 _HERO_SVG = """
 <svg viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto; max-width:480px;">
   <circle cx="440" cy="110" r="90" fill="#FFD166" opacity="0.85"/>
@@ -119,24 +99,16 @@ _HERO_SVG = """
 </svg>
 """
 
-# CHANGED: wordmark colour moved from the old primary purple to a deep
-# amber -- dark enough to stay legible on the page's white background
-# (unlike the reference image's own accent gold, which is too light for
-# body-sized text on white), but still clearly part of the new gold family
-# rather than a leftover purple.
+# CHANGED: st.set_page_config() moved to main.py -- with st.navigation() (see
+# main.py), it must be called once in the entry script, before
+# st.navigation()/pg.run(), not repeated in each page.
 st.markdown(
     '<div style="font-size:2.4rem; font-weight:800; color:#B5651D; '
     'letter-spacing:0.01em; margin-bottom:16px; text-align:left;">MedReport AI</div>',
     unsafe_allow_html=True,
 )
 # CHANGED: hero background moved from the purple gradient to gold/amber, on
-# request. NOTE left deliberately visible: the illustration inside
-# (_HERO_SVG, defined above) still uses its original purple/blue accent
-# colours for the bars and pulse line -- those were not touched, since the
-# request was about the background specifically, but they may now read as
-# an odd colour clash against a gold background rather than the purple one
-# they were designed to sit on. Worth a follow-up pass if that reads wrong
-# once you see it live.
+# request.
 st.markdown(
     f"""
 <div style="background: linear-gradient(135deg, #F2A93B 0%, #EF9520 100%);
@@ -170,7 +142,7 @@ def _run_upload(file_bytes, file_name, user_id, age, sex, diet_type):
 
     A background thread keeps running regardless of which page is currently
     rendered (they all share the same server-side session), so switching
-    tabs no longer kills the request -- the result lands in session_state
+    tabs no longer kills the request, the result lands in session_state
     whenever it finishes, and any page can notice.
     """
     try:
@@ -193,13 +165,8 @@ def _run_upload(file_bytes, file_name, user_id, age, sex, diet_type):
             st.session_state.upload_status = "manual_needed"
         elif resp.status_code in (502, 413) or "413" in resp.text[:50]:
             # BUG FOUND live: a file over Lambda's 6MB request limit is
-            # rejected by AWS's own infrastructure, never reaching this
-            # app's code, and the response body is raw gateway HTML
-            # ("<html><title>502 Bad Gateway</title>...") rather than
-            # anything this app wrote -- showing it verbatim looked like
-            # the app itself was broken. maxUploadSize in config.toml
-            # should stop this at the picker, but this is the honest
-            # message for the rare case something still gets through.
+            # rejected by AWS's own infrastructure, never reaching this app's
+            # code, and the response body is raw gateway HTML
             st.session_state.upload_error = (
                 "This file is too large for the backend to accept (limit ~5MB). "
                 "Please try a smaller PDF."
@@ -211,7 +178,7 @@ def _run_upload(file_bytes, file_name, user_id, age, sex, diet_type):
     except requests.exceptions.ConnectionError:
         st.session_state.upload_error = "Cannot connect to backend. Make sure FastAPI is running on port 8000."
         st.session_state.upload_status = "error"
-    except Exception as e:  # background thread -- never let this vanish silently
+    except Exception as e:  # background thread, never let this vanish silently
         st.session_state.upload_error = str(e)
         st.session_state.upload_status = "error"
 
@@ -224,39 +191,23 @@ if status == "running":
         "being generated in the background, so feel free to switch tabs; it keeps "
         "processing and will be ready here (and on the Results page) when done."
     )
-    # BUG FOUND: the page already polls itself every 2s below regardless --
-    # a "Check progress" button here did nothing the auto-poll wasn't
-    # already doing, and clicking it right as generation finished could
-    # trigger the done-state auto-redirect while the user was mid-click,
-    # producing a confusing double transition (redirected to Results, then
-    # navigating back to this page showed "Report explained!" again).
-    # Removed; the silent auto-poll is enough on its own.
+    # BUG FOUND: the <svg> tag's OWN inline style had a second, separate
+    # max-width: 360px cap, independent of the outer container div's max-width
+    # (raised to 480px in an earlier round) -- the SVG's own cap was the
     time.sleep(2)
     st.rerun()
 elif status == "done":
-    # BUG FOUND: this banner fired for EVERY completed report regardless of
-    # where it came from, so a manual-entry submission showed "Report
-    # explained!" here (top of page, above "Upload Your Report") AND again
-    # at the bottom of the Manual Entry section (the in-context echo added
-    # for exactly this flow) -- the same acknowledgment duplicated, plus a
-    # jarring jump back to the top of the page away from where the user was
-    # actually working. Gated to PDF-origin reports only; the manual-entry
-    # section handles its own acknowledgment in place, near the bottom.
+    # BUG FOUND: the <svg> tag's OWN inline style had a second, separate
+    # max-width: 360px cap, independent of the outer container div's max-width
+    # (raised to 480px in an earlier round) -- the SVG's own cap was the
     if (st.session_state.get("report") or {}).get("parse_method") != "manual":
-        # CHANGED: used to auto-redirect to Results the FIRST time a report
-        # finished, then fall back to this manual banner on every later visit --
-        # two different experiences for the same "done" state, depending on
-        # whether this was the first time it was seen. Now always shows this
-        # banner and always requires the explicit click, so the behaviour is
-        # identical regardless of when or how many times you land here.
+        # CHANGED: st.set_page_config() moved to main.py -- with
+        # st.navigation() (see main.py), it must be called once in the entry
+        # script, before st.navigation()/pg.run(), not repeated in each page.
         st.success("Report explained!")
-        # BUG FOUND: st.columns(2) stretches across the full page width, so
-        # with only two short buttons in it "View results" sat pinned to the
-        # far left and "Upload another report" sat pinned to the far right,
-        # with a large stretch of empty space between them -- looked like a
-        # layout mistake rather than one related button pair. A narrow
-        # column pair, sized to the buttons rather than the page, keeps them
-        # sitting together the way two related actions should.
+        # BUG FOUND: the <svg> tag's OWN inline style had a second, separate
+        # max-width: 360px cap, independent of the outer container div's
+        # max-width (raised to 480px in an earlier round) -- the SVG's own cap
         col_a, col_b, _spacer = st.columns([1, 1.4, 3])
         with col_a:
             if st.button("View results", type="primary"):
@@ -266,11 +217,9 @@ elif status == "done":
                 st.session_state.upload_status = None
                 st.session_state.upload_error = None
                 st.rerun()
-        # BUG FOUND: this divider and the one right before "Manual Entry"
-        # (further down) rendered back-to-back with nothing in between,
-        # since the file uploader is hidden while status is "done" -- two
-        # grey lines stacked directly on top of each other for no reason.
-        # Removed; the Manual Entry section's own divider is enough.
+        # BUG FOUND: the <svg> tag's OWN inline style had a second, separate
+        # max-width: 360px cap, independent of the outer container div's
+        # max-width (raised to 480px in an earlier round) -- the SVG's own cap
 elif status == "error":
     st.error(st.session_state.upload_error)
 elif status == "manual_needed":
@@ -278,10 +227,9 @@ elif status == "manual_needed":
 
 uploaded = None
 if status not in ("running", "done"):
-    # BUG FOUND: this used to render unconditionally, so a completed report's
-    # success banner and a live "pick a new file" uploader showed on screen
-    # at the same time -- confusing, and redundant with "Upload another
-    # report" above, which already exists specifically to get back here.
+    # BUG FOUND: the <svg> tag's OWN inline style had a second, separate
+    # max-width: 360px cap, independent of the outer container div's max-width
+    # (raised to 480px in an earlier round) -- the SVG's own cap was the
     uploaded = st.file_uploader(
         "Choose your report PDF", type=["pdf"],
         help="Your file is processed transiently and never stored raw. "
@@ -309,17 +257,14 @@ if uploaded and status != "running":
             ),
             daemon=True,
         )
-        # REQUIRED, not cosmetic. st.session_state resolves through the thread's
-        # ScriptRunContext. A bare thread has none, so Streamlit logs
-        # "missing ScriptRunContext!" and silently falls back to a PROCESS-WIDE
-        # mock session state -- the worker's writes would land there while the
-        # main thread keeps reading the real one, and the spinner never clears.
+        # REQUIRED, not cosmetic. st.session_state resolves through the
+        # thread's ScriptRunContext.
         add_script_run_ctx(worker)
         worker.start()
         st.rerun()
 
 def _run_manual_explain(manual_results, user_id, age, sex, diet_type):
-    """Mirrors _run_upload above -- same background-thread pattern, same
+    """Mirrors _run_upload above, same background-thread pattern, same
     session_state fields, so the Results page and status banner behave
     identically regardless of which path (PDF or manual) produced the report.
     """
@@ -343,13 +288,8 @@ def _run_manual_explain(manual_results, user_id, age, sex, diet_type):
             st.session_state.upload_status = "done"
         elif resp.status_code in (502, 413) or "413" in resp.text[:50]:
             # BUG FOUND live: a file over Lambda's 6MB request limit is
-            # rejected by AWS's own infrastructure, never reaching this
-            # app's code, and the response body is raw gateway HTML
-            # ("<html><title>502 Bad Gateway</title>...") rather than
-            # anything this app wrote -- showing it verbatim looked like
-            # the app itself was broken. maxUploadSize in config.toml
-            # should stop this at the picker, but this is the honest
-            # message for the rare case something still gets through.
+            # rejected by AWS's own infrastructure, never reaching this app's
+            # code, and the response body is raw gateway HTML
             st.session_state.upload_error = (
                 "This file is too large for the backend to accept (limit ~5MB). "
                 "Please try a smaller PDF."
@@ -373,43 +313,21 @@ st.caption("If your PDF did not parse correctly, enter values manually here.")
 if "manual_results" not in st.session_state:
     st.session_state.manual_results = []
 if "manual_form_version" not in st.session_state:
-    # BUG FOUND: after "Add test value", the Test name/Value/Unit fields
-    # kept showing what was just typed (e.g. "Haemoglobin" stayed in the
-    # box), so adding a SECOND, different test meant manually clearing
-    # them first. Streamlit widgets can't have their session_state value
-    # overwritten in the same run they're created in (raises
-    # StreamlitAPIException) -- the standard workaround is to change the
-    # widget's key instead, which makes the next rerun treat it as a brand
-    # new, empty widget rather than trying to mutate an existing one.
+    # BUG FOUND: after "Add test value", the Test name/Value/Unit fields kept
+    # showing what was just typed (e.g.
     st.session_state.manual_form_version = 0
 
-# BUG FOUND: this expander used to always default to collapsed
-# (st.expander's implicit expanded=False) on every rerun, including the
-# rerun that fires the instant "Explain my results" finishes. That made a
-# just-submitted, still-populated manual_results list look like it had
-# been wiped, when it was only hidden. Force it open whenever there's
-# something in it, so submitted values stay visible instead of appearing
-# to vanish behind the success banner.
+# BUG FOUND: the <svg> tag's OWN inline style had a second, separate
+# max-width: 360px cap, independent of the outer container div's max-width
+# (raised to 480px in an earlier round) -- the SVG's own cap was the tighter
 with st.expander("Enter test values manually", expanded=bool(st.session_state.manual_results)):
     _fv = st.session_state.manual_form_version
     # BUG FOUND: putting the example inside the label ("Test name (e.g.
-    # Haemoglobin)") made that label wrap to two lines in a narrower browser
-    # window, which pushed its input box down relative to the Value/Unit
-    # boxes next to it (whose one-line labels didn't wrap) -- the three
-    # boxes stopped lining up on the same row. Moved the examples into
-    # `placeholder=` (greyed-out hint text inside the empty box, the
-    # conventional place for this) so every label stays one line.
     col1, col2, col3 = st.columns(3)
     with col1:
         test_name = st.text_input("Test name", placeholder="e.g. Haemoglobin", key=f"manual_name_{_fv}")
     with col2:
         # BUG FOUND: st.number_input always pre-fills the field with "0.00".
-        # Clicking into it (unlike triple-click or Cmd+A) just places the
-        # cursor somewhere inside that text rather than selecting it, so
-        # typing "14.5" merges with the leftover zeros instead of replacing
-        # them (e.g. produced "0.00145"). A plain text field has nothing
-        # pre-filled to collide with; the string is parsed to a float only
-        # when "Add test value" is clicked.
         test_value_raw = st.text_input("Value", placeholder="e.g. 14.5", key=f"manual_value_{_fv}")
     with col3:
         test_unit = st.text_input("Unit", placeholder="e.g. g/dL", key=f"manual_unit_{_fv}")
@@ -417,12 +335,9 @@ with st.expander("Enter test values manually", expanded=bool(st.session_state.ma
     if st.button("Add test value"):
         name = test_name.strip()
         # BUG FOUND: this used to append unconditionally, so an empty click
-        # (blank name) added a ghost {"raw_name": "", ...} row, and adding
-        # the SAME test name twice (e.g. once without a unit, then again
-        # after typing it) produced two separate entries instead of one
-        # corrected one. Fixed: require a name, and match on it
-        # case-insensitively to REPLACE an existing entry rather than
-        # duplicate it.
+        # (blank name) added a ghost {"raw_name": "", ...} row, and adding the
+        # SAME test name twice (e.g. once without a unit, then again after
+        # typing it) produced two separate entries instead of one corrected
         try:
             test_value = float(test_value_raw.strip())
         except ValueError:
@@ -462,9 +377,8 @@ with st.expander("Enter test values manually", expanded=bool(st.session_state.ma
                     st.rerun()
 
         # BUG FOUND: there was previously no way to actually submit these
-        # entries anywhere -- they only ever sat in session_state as a raw
-        # JSON dump. Wired to a new backend endpoint (/explain-manual) that
-        # mirrors /upload-pdf's own pipeline.
+        # entries anywhere, they only ever sat in session_state as a raw JSON
+        # dump.
         if st.button("Explain my results", type="primary", key="explain_manual_btn"):
             profile = st.session_state.get("profile", {})
             st.session_state.upload_status = "running"
@@ -485,34 +399,22 @@ with st.expander("Enter test values manually", expanded=bool(st.session_state.ma
 
         # BUG FOUND: the only "done" acknowledgment lived at the very top of
         # the page (the status banner right below "Upload Your Report").
-        # Since a completed background job triggers st.rerun(), the browser
-        # resets scroll to the top -- so from the user's position at the
-        # bottom, in Manual Entry, it looked like the whole section had been
-        # replaced by "Upload Your Report" rather than just scrolled away
-        # from. Echoing the same acknowledgment here too (gated to manual
-        # -entry reports specifically, via parse_method) means confirmation
-        # shows up right where the action was taken, no scrolling required.
         if (
             st.session_state.upload_status == "done"
             and (st.session_state.get("report") or {}).get("parse_method") == "manual"
         ):
             st.success("Report explained!")
-            # BUG FOUND: st.columns(2) stretches across the full page width,
-            # same issue already fixed for the PDF-upload path's equivalent
-            # button pair above -- just never applied here too. Narrow
-            # columns, sized to the buttons, keep the pair grouped together.
+            # BUG FOUND: the <svg> tag's OWN inline style had a second,
+            # separate max-width: 360px cap, independent of the outer
+            # container div's max-width (raised to 480px in an earlier round)
             ack_col1, ack_col2, _ack_spacer = st.columns([1, 1.6, 3])
             with ack_col1:
                 if st.button("View results", type="primary", key="view_results_manual_btn"):
                     st.switch_page("pages/2_results.py")
             with ack_col2:
-                # BUG FOUND: there was no way to start a fresh set of manual
-                # entries after explaining one -- the old entries just sat
-                # there, and the only way to clear them was a full page
-                # refresh (which also wipes the profile/session). "Add
-                # test value" replaces an entry with the SAME name, but
-                # doesn't help if the next set of tests has different
-                # names entirely.
+                # BUG FOUND: the <svg> tag's OWN inline style had a second,
+                # separate max-width: 360px cap, independent of the outer
+                # container div's max-width (raised to 480px in an earlier
                 if st.button("Enter a new set of tests", key="reset_manual_btn"):
                     st.session_state.manual_results = []
                     st.session_state.manual_form_version += 1
