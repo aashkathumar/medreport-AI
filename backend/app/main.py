@@ -20,13 +20,11 @@ app.include_router(router, prefix="/api/v1")
 
 @app.on_event("startup")
 def _warm_rag_index() -> None:
-    """Loads the FAISS index + SentenceTransformer in the background at boot.
-
-    Otherwise the FIRST upload of the process pays ~1.7s of model/index load
-    on top of everything else, on the request path. Runs in a daemon thread so
-    a slow (or failing) load never blocks the server from accepting traffic --
-    index_health() already records the failure reason for /rag/health.
-    """
+    """Loads the FAISS index + SentenceTransformer in the background at
+    boot, so the first upload doesn't pay ~1.7s of model/index load on the
+    request path. Runs in a daemon thread so a slow or failing load never
+    blocks the server from accepting traffic; index_health() already
+    records the failure reason for /rag/health."""
     def _warm() -> None:
         try:
             health = index_health()

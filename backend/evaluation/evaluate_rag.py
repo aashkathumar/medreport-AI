@@ -1,27 +1,14 @@
-"""
-Evaluation harness for the constrained RAG pipeline.
+"""Evaluation harness for the constrained RAG pipeline, focused on
+retrieval accuracy and readability against NHS UK / NIH MedlinePlus
+source material rather than clinical interpretation.
 
-Aligned with the project's stated evaluation focus: retrieval accuracy and
-readability against NHS UK / NIH MedlinePlus source material, rather than
-clinical interpretation of results.
-
-Reports three things:
-
-  1. RETRIEVAL ACCURACY , given a realistic raw test name as printed on a
-     lab report, does the retriever return passages from the page that
-     actually covers that analyte? Precision@1 and Recall@k, plus the
-     rejection rate on out-of-corpus queries (a retriever that returns
-     something for everything is not constrained).
-
-  2. GROUNDEDNESS       , what fraction of generated explanations pass
-     post-generation source verification (no unsourced figures, sufficient
-     lexical support from the retrieved NHS/NIH text). Ungrounded output is
-     replaced by a GP referral in production, so this is the rate at which
-     the constraint actually binds.
-
-  3. READABILITY        , Flesch-Kincaid grade level and Flesch reading
-     ease of the generated explanations, and of the NHS/NIH source passages
-     they were built from, so the two can be compared directly.
+Reports three things: retrieval accuracy (does a raw test name return
+passages from the page that actually covers that analyte, via Precision@1/
+Recall@k plus the rejection rate on out-of-corpus queries); groundedness
+(what fraction of generated explanations pass post-generation source
+verification, since ungrounded output is replaced by a GP referral in
+production); and readability (Flesch-Kincaid grade and reading ease of
+the generated text vs. the source passages it was built from).
 
 Usage (from backend/):
     python evaluation/evaluate_rag.py              # retrieval only, no API calls

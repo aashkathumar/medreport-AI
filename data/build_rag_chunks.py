@@ -1,28 +1,18 @@
-"""
-Builds data/rag_chunks.json, the RAG corpus, by scraping NHS UK and
-NIH MedlinePlus reference pages.
+"""Builds data/rag_chunks.json, the RAG corpus, by scraping NHS UK and NIH
+MedlinePlus reference pages.
 
-Usage (from repo root):
-    python data/build_rag_chunks.py
+Usage (from repo root): python data/build_rag_chunks.py
+Then rebuild the vector index: python scripts/build_rag_index.py
 
-Then rebuild the vector index:
-    python scripts/build_rag_index.py
-
-CHANGED (was silently producing a useless corpus):
-  * Of the 4 URLs in the old TARGET_SOURCES, 3 returned 404. The failures
-    were caught, printed, and then ignored - the script still exited 0 and
-    still wrote rag_chunks.json. The resulting "RAG corpus" was 21 chunks
-    scraped from a single generic NHS "Blood tests" landing page, every one
-    of them tagged test_id="HGB" regardless of content. Retrieval could not
-    have worked. Every URL in SOURCES below has been checked live, and the
-    script now exits non-zero if any source fails, so a silent corpus
-    regression can't happen again.
-  * One chunk per <p> produced fragments too short to be useful grounding
-    ("If a healthcare professional such as a GP..."). Extraction is now
-    section-aware: it walks headings and emits one chunk per document
-    section, so "What do the results mean?" arrives as a coherent passage.
-  * A page can now ground several tests (a CBC page covers HGB/WBC/PLT/RBC/
-    HCT/MCV), so chunks carry a list of test_ids rather than a single one.
+BUG FOUND: most URLs in the old source list returned 404, but the
+failures were caught, printed, and ignored, so the script still exited 0
+and wrote a near-empty corpus scraped from a single generic landing page,
+every chunk mistagged with the same test_id. Every URL is now checked
+live and the script exits non-zero if any source fails. Extraction is
+also now section-aware (one chunk per document section rather than per
+paragraph, since single-paragraph chunks were often too short to be
+useful grounding), and a page can carry a list of test_ids so one page
+can ground several related tests.
 """
 import json
 import re
@@ -223,19 +213,13 @@ def discover_medlineplus_lab_tests(session: requests.Session) -> list[dict]:
 
 
 def _derive_test_ids(title: str) -> list[str]:
-    """Best-effort canonical test_id(s) for an auto-discovered page.
-
-    A scraped chunk is only reachable at explanation time if it's tagged
-    with the SAME id a real report's raw field name resolves to via
-    reference_db.canonicalize_test_name(), not just whatever the page's
-    own title happens to be. canonicalize_test_name() is deliberately
-    narrow (see its own docstring) and does NOT strip words like "Test" or
-    "Levels", but a real lab report prints "Aldosterone", not "Aldosterone
-    Test", so that stripping has to happen here, or every auto-discovered
-    chunk would sit unused under a title-shaped id nothing ever matches.
-    Also splits out any parenthetical abbreviation ("Adrenocorticotropic
-    Hormone (ACTH)") as its OWN candidate id, since reports commonly print
-    the abbreviation alone rather than the full name.
+    """Best-effort canonical test_id(s) for an auto-discovered page. A
+    scraped chunk is only reachable if it's tagged with the same id a
+    report's raw field name resolves to via canonicalize_test_name(),
+    which deliberately doesn't strip words like "Test" or "Levels", but a
+    report prints "Aldosterone", not "Aldosterone Test", so that stripping
+    happens here instead. Also splits out a parenthetical abbreviation as
+    its own candidate id, since reports commonly print that alone.
     """
     ids = []
     # Minimum 2 chars, a real medical abbreviation is never a single letter,

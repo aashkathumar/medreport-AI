@@ -1,27 +1,18 @@
-"""
-One-time batch job: generates and caches ALL THREE test-general fields
+"""One-time batch job: generates and caches all three test-general fields
 (what_it_measures, lifestyle_suggestions, gp_question) for every test_id
-covered by the RAG corpus, writing directly into the same exact-match
-cache (local_data/explanation_cache.json, keyed (test_id, specimen)) that
-_cache_get()/_explain_batch() already check first, before any LLM call.
+in the RAG corpus, writing into the same exact-match cache _explain_batch
+already checks first, before any LLM call.
 
-Why this exists alongside precompute_what_it_measures.py: that script only
-ever covers ONE of the four fields. _EXPLANATION_CACHE already covers all
-four, keyed on (test_id, specimen) alone in this branch, since nothing
-generated here depends on the patient's specific value (see _cache_key's
-docstring), but it is only ever populated REACTIVELY, the first time a
-real report happens to mention a given test. This script does the same
-work proactively, for the whole known-covered set, so the FIRST real
-report to ever mention any of these ~407 tests gets a cache hit (zero LLM
-calls, zero chance of an empty/degraded field) instead of needing one
-live "warm-up" generation per test_id first.
+Unlike precompute_what_it_measures.py (one field only), this covers all
+four cached fields, keyed on (test_id, specimen) since nothing generated
+here depends on the patient's own reading (see _cache_key). Normally that
+cache only fills reactively, the first time a report mentions a given
+test; this does the same work proactively for the whole corpus, so the
+first report to ever mention any of these ~407 tests gets an immediate
+cache hit instead of a live warm-up generation.
 
-Usage (from repo root):
-    backend/.venv/bin/python scripts/precompute_full_explanations.py
-
-Safe to re-run: skips any (test_id, None) key already in the cache, so a
-partial run (rate limit, interrupted) just picks up where it left off.
-Pass --force to regenerate every entry from scratch.
+Usage (from repo root): backend/.venv/bin/python scripts/precompute_full_explanations.py
+Safe to re-run: skips any key already cached. Pass --force to regenerate.
 """
 import json
 import os

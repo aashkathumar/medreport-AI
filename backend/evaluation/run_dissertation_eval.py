@@ -1,22 +1,14 @@
-"""One-off evaluation run for the dissertation's Chapter 4 (Results).
+"""One-off evaluation run for the dissertation's Chapter 4 (Results). Not
+a permanent part of the application, run once by hand, with the same test
+cases and scoring reused unchanged across branches for a direct
+comparison.
 
-Not a permanent part of the application, run once, by hand, to produce
-real numbers for the accuracy table instead of the placeholder rows left
-in the draft. Reused unchanged (same test cases, same scoring) against
-both branches so the two branches' numbers are directly comparable.
-
-Metrics:
-  - grounding_pass: whether the explanation passed the system's own
-    anti-hallucination verification (_verify_grounded) without being
-    degraded to the generic fallback. This is a genuine, already-existing
-    system behaviour, not a metric invented for this evaluation, a
-    "pass" means every claim in the explanation was checked against its
-    retrieved NHS/NIH source text and found to contain no unsourced
-    figure.
-  - completeness: what_it_measures present, at least 2 lifestyle
-    suggestions, a gp_question present. Automatable, not a judgement call.
-  - flesch_kincaid: readability grade level of the combined patient-facing
-    text, via the `textstat` package.
+Metrics: grounding_pass (whether the explanation passed the system's own
+anti-hallucination verification without degrading to fallback, a genuine
+existing behaviour rather than a metric invented for this evaluation),
+completeness (required fields present, automatable rather than a
+judgement call), and flesch_kincaid (readability grade of the combined
+patient-facing text via the `textstat` package).
 """
 import json
 import sys

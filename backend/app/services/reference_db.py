@@ -1,21 +1,13 @@
-"""
-Reference Database Service.
-Handles test alias resolution, normal range lookups by demographic (sex/age),
-and status flagging for lab values.
+"""Reference database service: test alias resolution, normal-range lookups
+by demographic, and status flagging.
 
-CHANGED: flag_result() priority is now:
-  1. The reference range PRINTED ON THIS REPORT (most authoritative - it's
-     lab/method/instrument/demographic-specific, unlike a static lookup table).
-  2. Our static REFERENCE_DB (fallback for tests the document didn't print
-     a numeric range for, e.g. regex/OCR-only extraction with no range column).
-  3. The LLM's own status guess (a judgement call, not a comparison against
-     a specific number - lowest-trust numeric-adjacent source).
-  4. Qualitative string matching, unchanged.
+flag_result()'s priority order, highest trust first: the range printed on
+that specific report, then the static REFERENCE_DB lookup, then the LLM's
+own qualitative guess, then plain string matching as a last resort.
 
-Also added: finalize_result() and dedupe_results(), shared helpers so every
-extraction tier (table / vision LLM / text LLM / regex) in pdf_parser.py
-computes status the exact same deterministic way, rather than each tier
-producing its own inconsistent answer.
+finalize_result() and dedupe_results() are shared helpers so every
+extraction tier in pdf_parser.py computes status the same deterministic
+way instead of each producing its own inconsistent answer.
 """
 import json
 import re
@@ -156,12 +148,9 @@ def grounding_test_id(test_id: str, specimen: Optional[str] = None) -> str:
 
 
 def _load_reference_db() -> Dict[str, Dict[str, Any]]:
-    """
-    Builds REFERENCE_DB from the curated NHS UK / NIH MedlinePlus-sourced
-    JSON files, rather than a small hand-maintained dict, so every test
-    those files cover has real grounding available (avoiding LLM
-    hallucination for tests that otherwise had no reference data).
-    """
+    """Builds REFERENCE_DB from the curated NHS UK / NIH MedlinePlus JSON
+    files rather than a small hand-maintained dict, so every test those
+    files cover has real grounding available."""
     db: Dict[str, Dict[str, Any]] = {}
     for filename in ("blood_tests.json", "urine_tests.json"):
         path = _DATA_DIR / filename
@@ -193,16 +182,11 @@ REFERENCE_DB = _load_reference_db()
 
 
 def _load_generated_aliases() -> None:
-    """Merges LLM-generated synonym candidates (scripts/generate_test_synonyms.py)
-    into ALIAS_MAP.
-
-    The generator script already excludes anything ambiguous (proposed for
-    two different test_ids) or colliding with an existing alias pointing
-    elsewhere, what's in this file passed both checks. setdefault() here
-    is a second, defense-in-depth guarantee of the same rule: a hand-curated
-    or earlier-loaded entry can never be silently overwritten by a
-    generated one, regardless of what the file contains.
-    """
+    """Merges LLM-generated synonym candidates (see
+    scripts/generate_test_synonyms.py) into ALIAS_MAP. The generator
+    already excludes anything ambiguous or colliding with an existing
+    alias; setdefault() here is a second, defense-in-depth guarantee that
+    a hand-curated entry can never be overwritten by a generated one."""
     path = _DATA_DIR / "llm_generated_aliases_accepted.json"
     if not path.exists():
         return
@@ -225,24 +209,18 @@ def _alias_key(raw_name: str) -> str:
 
 
 def resolve_test_id(raw_name: str) -> Optional[str]:
-    """
-    Resolves raw test names/aliases to canonical test IDs in the database.
-    Returns canonical ID string (e.g. 'HGB') or None if unmapped/unknown.
+    """Resolves raw test names/aliases to canonical test IDs. Returns a
+    canonical ID string (e.g. 'HGB') or None if unmapped.
 
-    CHANGED: the lookup used `raw_name.strip().lower()` while every key in
-    ALIAS_MAP is underscore-separated ("white_blood_cell_count"), including
-    the keys _load_reference_db() generates from the curated JSON names. So a
-    lookup only ever hit for SINGLE-WORD names: "Haemoglobin" and "Platelets"
-    resolved, while "White Blood Cell Count", "Total Cholesterol", "LDL
-    Cholesterol", "Vitamin D", "Vitamin B12", "Blood Glucose" and "Urine
-    Protein" all returned None. Those tests then had no curated entry, so
-    they lost BOTH their static reference range (shown as "None-None" in the
-    UI and PDF) and their curated grounding text. Normalising the lookup the
-    same way the keys are built fixes 8 of the 21 curated tests.
+    BUG FOUND: the lookup used to compare `raw_name.strip().lower()`
+    against ALIAS_MAP's underscore-separated keys, so it only ever matched
+    single-word names; multi-word ones like "White Blood Cell Count" or
+    "Total Cholesterol" always returned None and silently lost both their
+    static range and their curated grounding text. Normalising the lookup
+    the same way the keys are built fixed 8 of the 21 curated tests.
 
-    Falls back to the sample/method-qualifier-stripped form, so "Cholesterol,
-    Serum" and "Creatinine (24 hour)" resolve to the same entry as the bare
-    analyte name.
+    Also falls back to the qualifier-stripped form, so "Cholesterol, Serum"
+    and "Creatinine (24 hour)" resolve to the same entry as the bare name.
     """
     if not raw_name or not isinstance(raw_name, str):
         return None
@@ -304,12 +282,11 @@ _URINE_QUALIFIER_RE = re.compile(r"\b(urine|urinary)\b", re.IGNORECASE)
 
 
 def canonicalize_test_name(raw_name: str) -> str:
-    """Produces a stable synthetic test_id for tests with no known alias,
-    so the same analyte extracted with slightly different wording across
-    tiers/batches still dedupes to one entry. NOT a substitute for growing
-    ALIAS_MAP - genuinely different phrasings of the same well-known test
-    (e.g. "Fasting Glucose" vs "Glucose (Fasting)") still need a real alias
-    entry to merge; this only strips sample-collection/method noise."""
+    """Produces a stable synthetic test_id for tests with no known alias, so
+    the same analyte extracted with slightly different wording still
+    dedupes to one entry. Not a substitute for growing ALIAS_MAP: genuinely
+    different phrasings still need a real alias to merge; this only strips
+    sample-collection/method noise."""
     if not raw_name or not isinstance(raw_name, str):
         return "UNKNOWN_TEST"
     cleaned = _BRACKETED_SPECIMEN_NOTE.sub(" ", raw_name)
@@ -414,21 +391,13 @@ def _parse_labeled_bands(ref_range: str) -> Optional[Tuple[Optional[float], Opti
 
 
 def parse_ref_range_string(ref_range: Optional[str]) -> Optional[Tuple[Optional[float], Optional[float]]]:
-    """
-    Parses a reference range EXACTLY as printed on a lab report into
+    """Parses a reference range exactly as printed on a lab report into
     (low, high) bounds, where either side can be None for an open-ended
-    range (e.g. "< 16.7" -> (None, 16.7)).
-
-    Returns None if the string is purely categorical/unparseable (e.g.
-    "Negative", "Non Reactive : <1.0" without extractable digits, "Pale
-    Yellow") - those cases fall through to qualitative handling elsewhere.
-
-    Handles the formats actually observed in real reports:
-      "13.0 - 16.5"            -> (13.0, 16.5)
-      "6 .0 - 8.0 pH"          -> (6.0, 8.0)   (stray-whitespace artifact)
-      "< 16.7"                 -> (None, 16.7)
-      "> 60.0"                 -> (60.0, None)
-      "Non Reactive : <1.0"    -> (None, 1.0)
+    range (e.g. "< 16.7" -> (None, 16.7)). Returns None if the string is
+    purely categorical/unparseable ("Negative", "Pale Yellow"), which
+    falls through to qualitative handling elsewhere. Handles the formats
+    actually seen on specimen reports, including stray-whitespace OCR
+    artifacts like "6 .0 - 8.0 pH".
     """
     if not ref_range or not isinstance(ref_range, str):
         return None
@@ -476,14 +445,10 @@ def flag_result(
     llm_status: Optional[str] = None,
     document_ref_range: Optional[str] = None,
 ) -> RangeStatus:
-    """
-    Determines the clinical status of a result. Priority order (highest
-    trust first) - see module docstring for rationale:
-      1. document_ref_range  (printed on THIS report)
-      2. normal_range        (our static REFERENCE_DB lookup)
-      3. llm_status           (LLM's own qualitative guess)
-      4. qualitative string matching
-    """
+    """Determines the clinical status of a result. Priority order, highest
+    trust first (see module docstring): the range printed on this report,
+    then the static REFERENCE_DB lookup, then the LLM's own qualitative
+    guess, then plain string matching."""
     # 1. Highest priority: the range this specific lab actually printed.
     if document_ref_range:
         bounds = parse_ref_range_string(document_ref_range)
@@ -537,16 +502,11 @@ def flag_result(
 # --------------------------------------------------------------------------
 
 def finalize_result(result: dict, patient_sex: str = "unknown", patient_age: int = 30) -> dict:
-    """
-    Takes a raw extracted result dict from ANY tier (deterministic table,
-    vision LLM, text LLM, or regex) and computes the final, authoritative
-    status + normal-range bounds the same way every time.
-
-    Mutates and returns `result`, adding/overwriting:
-      - status              final RangeStatus.value string
-      - llm_status          the tier's original raw guess, kept for audit/debugging
-      - normal_range_min/max  resolved bounds, for downstream display or explain_all_test_results_batched
-    """
+    """Takes a raw extracted result dict from any tier (table, vision LLM,
+    text LLM, or regex) and computes the final status and normal-range
+    bounds the same way every time. Mutates and returns `result` with
+    status, the tier's original raw guess (kept for audit), and the
+    resolved range bounds."""
     test_id = result.get("test_id") or "UNKNOWN_TEST"
     value = result.get("value")
     doc_range = result.get("ref_range")
@@ -588,26 +548,18 @@ def finalize_result(result: dict, patient_sex: str = "unknown", patient_age: int
 
 
 def dedupe_results(results: List[dict]) -> List[dict]:
-    """
-    De-duplicates extracted results by (test_id, raw_name) (results can
-    otherwise repeat across table + LLM tiers, or across vision batches on
-    long reports). Keeps the most informative entry per key: prefers one
-    with a parseable printed ref_range, then one with a recognized/known
-    test_id, then first-seen.
+    """De-duplicates extracted results by (test_id, raw_name), since
+    results can otherwise repeat across tiers or vision batches. Keeps the
+    most informative entry per key: prefers one with a parseable printed
+    ref_range, then a recognized test_id, then first-seen.
 
-    BUG FOUND (LabReport.pdf, a QuantiFERON-TB panel): keying on test_id
-    ALONE used to collapse genuinely different rows that happen to share
-    one canonical test_id, confirmed directly on this report, where "TB
-    NIL Tube", "TB Antigen Tube", and "TB Ag Minus NIL" are three distinct
-    real measurements that all resolve to the single "TUBERCULOSIS"
-    reference entry (there's one generic screening page for the whole
-    panel, not one per sub-component). Deduping by test_id alone kept only
-    one of the three and silently discarded the other two, even though
-    they were never duplicates of each other, test_id-alone dedup is
-    still correct and needed for the case this function was built for (the
-    SAME row found twice, once per extraction tier), it just needed a
-    second key to tell "the same row, twice" apart from "two different
-    rows that share a reference page".
+    BUG FOUND (a QuantiFERON-TB panel): keying on test_id alone collapsed
+    "TB NIL Tube", "TB Antigen Tube", and "TB Ag Minus NIL", three genuinely
+    distinct measurements that all resolve to the same "TUBERCULOSIS"
+    reference entry, silently discarding two of the three. test_id-alone
+    dedup is still correct for its original case (the same row found twice
+    across tiers); it just needed raw_name as a second key to tell that
+    apart from different rows sharing one reference page.
     """
     best: Dict[tuple, dict] = {}
     order: List[tuple] = []

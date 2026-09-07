@@ -1,26 +1,18 @@
-"""
-Builds the FAISS vector index used for RAG retrieval.
-Run this ONCE (and again any time data/rag_chunks.json changes),
-AFTER running data/build_rag_chunks.py.
+"""Builds the FAISS vector index used for RAG retrieval. Run this once,
+and again any time data/rag_chunks.json changes, after
+data/build_rag_chunks.py.
 
-Usage (from repo root):
-    python scripts/build_rag_index.py
+Usage (from repo root): python scripts/build_rag_index.py
+First run downloads the embedding model (~90MB) automatically.
 
-First run downloads the embedding model (~90MB) from Hugging Face Hub
-automatically, no manual download needed, just an internet connection.
-
-CHANGED: the index was IndexFlatL2 over raw (un-normalised) embeddings, and
-rag_service filtered on "L2 distance <= 1.2", a threshold with no
-interpretable meaning, tuned against a corpus that was in practice never
-queried. Embeddings are now L2-normalised and stored in an inner-product
-index, so a search score IS cosine similarity in [-1, 1]. That makes the
-relevance cutoff a number you can reason about and defend (0.30 keeps
-on-topic passages, drops unrelated ones), and it is the metric
-all-MiniLM-L6-v2 is actually trained for.
-
-Also writes rag_index_meta.json so rag_service can verify at load time that
-the index and the chunks file are in sync, a stale index silently paired
-with a rebuilt corpus would otherwise return text for the wrong test.
+BUG FOUND: the index used to be raw, un-normalised embeddings filtered
+on an uninterpretable L2-distance threshold. Embeddings are now
+L2-normalised in an inner-product index, so a search score is cosine
+similarity in [-1, 1], a number that can actually be reasoned about, and
+the metric this embedding model is trained for. Also writes
+rag_index_meta.json so rag_service can verify the index and the chunks
+file are in sync, since a stale index paired with a rebuilt corpus would
+otherwise return text for the wrong test.
 """
 import json
 from pathlib import Path

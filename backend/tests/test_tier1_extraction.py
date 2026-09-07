@@ -1,10 +1,7 @@
-"""
-Regression tests for Tier 1 (deterministic, LLM-free) extraction.
-
-Tier 1 previously returned ZERO rows on whitespace-aligned lab reports, the
-common case, so those reports fell through to the vision LLM, which is both
-the expensive tier and the one that hallucinates. These tests lock in the
-behaviour that keeps them on the free, deterministic path.
+"""Regression tests for Tier 1 (deterministic, LLM-free) extraction. Tier
+1 used to return zero rows on whitespace-aligned reports, the common
+case, falling through to the expensive, hallucination-prone vision tier;
+these tests lock in the behaviour that keeps them on the free path.
 
 Run (from backend/, no API keys and no network needed):
     python tests/test_tier1_extraction.py

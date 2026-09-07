@@ -1,13 +1,9 @@
-"""Shared visual polish, applied identically on every page.
-
-Streamlit's theme.toml handles colours; this covers what it can't (font
-family, corner rounding, card shadows, the sidebar colour scheme) via a
-small injected <style> block, plus the logo via the native st.logo() API.
-Kept deliberately conservative, targets standard HTML elements
-(button/input/[data-testid] attributes Streamlit itself sets, which are
-stable across versions) rather than guessing at internal class names that
-change between releases.
-"""
+"""Shared visual polish, applied identically on every page. Streamlit's
+theme.toml handles colours; this covers what it can't (fonts, corner
+rounding, shadows, the sidebar scheme) via a small injected <style> block,
+plus the logo via st.logo(). Deliberately targets standard, stable
+data-testid attributes rather than guessing at internal class names that
+change between releases."""
 from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components

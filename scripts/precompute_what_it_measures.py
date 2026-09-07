@@ -1,18 +1,12 @@
-"""
-One-time batch job: generates and caches `what_it_measures` for every test_id
-covered by the RAG corpus, so real reports never need an LLM call for that
+"""One-time batch job: generates and caches `what_it_measures` for every
+test_id in the RAG corpus, so reports never need an LLM call for that
 field again. explain_all_test_results_batched() checks
-local_data/what_it_measures_cache.json first (see llm_service._wim_get /
-_explain_batch's PRECOMPUTED handling) and only asks the LLM to fill in the
-patient-value-specific fields (what_your_result_means / lifestyle_suggestions
-/ gp_question) for anything it already has this field for.
+local_data/what_it_measures_cache.json first (see llm_service._wim_get)
+and only asks the LLM to fill in whatever fields it doesn't already have
+cached for that test.
 
-Usage (from repo root):
-    backend/.venv/bin/python scripts/precompute_what_it_measures.py
-
-Safe to re-run: skips any test_id already in the cache, so a partial run
-(rate limit, interrupted) just picks up where it left off next time. Pass
---force to regenerate every entry from scratch.
+Usage (from repo root): backend/.venv/bin/python scripts/precompute_what_it_measures.py
+Safe to re-run: skips any test_id already cached. Pass --force to regenerate.
 """
 import json
 import os

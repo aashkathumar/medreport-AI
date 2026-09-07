@@ -158,16 +158,14 @@ def extract_with_llm_text(text: str, provider: str = None) -> list[dict]:
 
 
 def _value_matches_range_boundary(value, ref_range) -> bool:
-    """CHANGED: safety net for the class of bug seen in production on an
-    HbA1c result - true value 7.10% (flagged High) was extracted as 5.7%,
-    which is actually the "Pre-Diabetes: 5.7% - 6.4%" band boundary from
-    inside the reference-range text, not the printed Result. That single
-    mix-up flipped the reported status from High to "below normal" - the
-    most dangerous direction for a health-literacy tool to be wrong in.
-    This doesn't fully prevent the mistake (the prompt change above is the
-    real fix), but it catches it after the fact: if the numeric value is
-    identical to one of the boundary numbers embedded in ref_range, that's
-    suspicious enough to flag for review rather than trust silently."""
+    """Safety net for a bug class where an HbA1c reading of 7.10% (High)
+    was extracted as 5.7%, the "Pre-Diabetes: 5.7-6.4%" band boundary from
+    inside the reference-range text, not the printed result, flipping the
+    reported status in the most dangerous direction possible. This doesn't
+    fully prevent the mistake (the prompt fix above does), but catches it
+    after the fact: a value identical to a boundary number embedded in
+    ref_range is suspicious enough to flag for review rather than trust
+    silently."""
     try:
         val = float(value)
     except (TypeError, ValueError):

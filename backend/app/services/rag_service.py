@@ -1,22 +1,15 @@
-"""
-FAISS-based semantic retrieval over the NHS UK / NIH MedlinePlus corpus
+"""FAISS-based semantic retrieval over the NHS UK / NIH MedlinePlus corpus
 built by data/build_rag_chunks.py + scripts/build_rag_index.py.
 
-CHANGED (retrieval was returning nothing at all, permanently):
-  * _DATA_DIR resolved to backend/data, which does not exist, the index
-    lives in the repo-root data/. _load() returned early, _INDEX stayed None,
-    and retrieve_context() returned [] for every query ever made, silently.
-    reference_db.py uses one more .parent and resolved correctly, which is
-    what made the discrepancy easy to miss. The path is now derived from the
-    same anchor as reference_db.py, and index_health() exposes the load state
-    instead of failing quietly.
-  * Scores are cosine similarity now (see scripts/build_rag_index.py), so the
-    relevance cutoff is an interpretable 0..1 number rather than an
-    uninterpretable L2 distance.
-  * Retrieval is test_id-aware: chunks scraped from a page that covers the
-    analyte being explained get a ranking bonus, so "Creatinine" retrieves the
-    creatinine page's passages rather than a semantically-similar passage
-    about urea from a different page.
+BUG FOUND: _DATA_DIR resolved to a path that doesn't exist, so _load()
+returned early and retrieve_context() silently returned [] for every
+query ever made. The path is now derived the same way reference_db.py
+derives it, and index_health() exposes the load state instead of failing
+quietly. Scores are also cosine similarity now, an interpretable 0-1
+number rather than raw L2 distance, and retrieval is test_id-aware: a
+page covering the analyte being explained gets a ranking bonus so a name
+retrieves its own page rather than a semantically similar one about a
+different analyte.
 """
 import json
 import os
@@ -180,28 +173,20 @@ def _anchor_tokens(text: str) -> set:
 
 
 def _has_lexical_anchor(test_name: str, test_id: Optional[str], chunk: dict) -> bool:
-    """Requires a passage to be tied to the test by something other than raw
-    embedding proximity: either the page is explicitly tagged with this
-    test_id, or the test's name shares a real word with the page's title.
+    """Requires a passage to be tied to the test by something other than
+    raw embedding proximity: either the page is explicitly tagged with
+    this test_id, or the test's name shares a real word with the page's
+    title.
 
-    BUG FOUND: retrieve_context builds its query as
-    "{name} ({test_id}) blood test result meaning". For a name carrying little
-    semantic signal of its own, "Colour", "pH", "Specific Gravity", that
-    boilerplate suffix DOMINATES the embedding, so the query lands near
-    whichever generic lab page happens to be closest and clears the similarity
-    floor on the strength of the boilerplate alone. Measured on this corpus:
-    Colour -> Hematocrit Test (0.576), pH -> Alkaline Phosphatase (0.555),
-    Specific Gravity -> Blood Glucose Test (0.557). Those citations then
-    appeared under the patient's result, which is worse than saying "not
-    covered": the explanation LOOKS sourced and is not.
-
-    A higher floor cannot fix this, correct matches like Nitrite (0.575) sit
-    at the same scores as those false ones, so the clusters overlap. What
-    separates them is lexical: a genuine match shares a word with its page
-    ("Bilirubin" -> "Bilirubin Blood Test", "Red Cells" -> "Red Blood Cell
-    (RBC) Count"), while a spurious one shares nothing at all. The test_id
-    clause keeps aliased tests working, where the printed name legitimately
-    differs from the page title (SGPT -> "ALT Blood Test").
+    BUG FOUND: for a name with little semantic signal of its own ("Colour",
+    "pH"), the query's boilerplate suffix dominated the embedding, so it
+    landed near whichever generic lab page was closest and cleared the
+    similarity floor on that alone, e.g. "pH" matching an unrelated
+    Alkaline Phosphatase page at a plausible-looking score. A higher floor
+    can't fix this since genuine and spurious matches score similarly; what
+    separates them is lexical overlap with the page title, which this
+    checks directly. The test_id clause keeps aliased tests working where
+    the printed name legitimately differs from the page title.
     """
     if test_id and test_id in (chunk.get("test_ids") or []):
         return True

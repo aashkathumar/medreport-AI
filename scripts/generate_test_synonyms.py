@@ -1,34 +1,22 @@
-"""
-One-time batch job: asks an LLM for common real-world lab-report names/
-abbreviations for each RAG-covered test_id, so a report using a phrasing
-we haven't manually encountered yet still resolves on the FIRST try
-instead of only after a human notices and patches ALIAS_MAP by hand.
+"""One-time batch job: asks an LLM for common lab-report names/
+abbreviations for each RAG-covered test_id, so an unfamiliar phrasing
+still resolves on the first try instead of waiting for a human to patch
+ALIAS_MAP by hand.
 
-This does NOT touch what gets shown to a patient, it only feeds
-reference_db.ALIAS_MAP, the internal raw-label -> canonical-test_id lookup
-used before any grounding or explanation happens. The NHS UK / NIH
-MedlinePlus-only rule governs explanation CONTENT; naming/synonym lookup is
-plumbing, not content, so this is a different, permitted use of the LLM.
+This never touches what's shown to a patient, only reference_db.ALIAS_MAP,
+the internal naming lookup used before any grounding or explanation
+happens; the NHS UK / NIH MedlinePlus-only rule governs explanation
+content, not this naming plumbing.
 
-Safety, not just convenience, a naive "what else is X called" pass risks
-conflating genuinely different tests (Ferritin and Iron are related but
-NOT synonyms; naively merging them would misroute a report). Two
-independent checks guard against that:
-  1. A candidate is dropped if it collides with an EXISTING alias (hand-
-     curated or a prior run) that already points to a DIFFERENT test_id --
-     never overwrite, only fill genuine gaps.
-  2. A candidate is dropped if it was ALSO generated as a synonym for some
-     OTHER test_id in the SAME run, an LLM proposing the same label for
-     two different tests is exactly the ambiguous case to refuse, not guess
-     on. Only names that resolve to exactly one test_id survive.
+Two safety checks guard against conflating genuinely different tests that
+share a name (Ferritin and Iron are related but not synonyms): a
+candidate is dropped if it collides with an existing alias pointing to a
+different test_id, and dropped if it was also proposed for a different
+test_id within the same run, since an LLM proposing one name for two
+tests is exactly the ambiguous case to refuse rather than guess on.
 
-Usage (from repo root):
-    backend/.venv/bin/python scripts/generate_test_synonyms.py
-
+Usage (from repo root): backend/.venv/bin/python scripts/generate_test_synonyms.py
 Safe to re-run: skips any test_id already covered in the output file.
-Writes candidates to data/llm_generated_aliases.json; reference_db.py
-loads this at import time and merges it into ALIAS_MAP via setdefault (so
-a hand-curated entry can never be silently overridden).
 """
 import json
 import os

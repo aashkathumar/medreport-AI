@@ -29,25 +29,14 @@ def verify_results_against_source(results: List[dict], source_text: str,
     """Drops results whose test name / value can't be found in the
     deterministically pre-extracted document text. See module note above.
 
-    CHANGED: matching used to be whole-document - name-words checked for
-    presence anywhere in the doc, and value digits checked with a bare
-    `value_digits in source_text` substring test anywhere in the doc. Two
-    real fabrication cases slipped past that:
-      1. A real test name (e.g. "Creatinine", "Potassium") legitimately
-         appears elsewhere in the report attached to its REAL value, so
-         name-coverage passed even when the value paired with it by the
-         LLM was fabricated.
-      2. The value substring check had no word boundaries, so e.g. a
-         fabricated "44" matched inside the unrelated "44109" printed in
-         a peak-area table on a completely different page.
-    Now: split the source into lines, and only accept a result if its
-    value appears - as a whole number, not a substring - on one of the
-    SAME lines where enough of the test name's significant words appear.
-    This ties the value to the row it claims to come from, not the
-    document at large. It still won't catch a wrong number attached to
-    the right test IF that wrong number happens to also appear on the
-    same line for some other reason, but that's a much narrower gap than
-    before."""
+    BUG FOUND: matching used to check name-words and value digits anywhere
+    in the whole document, so a real test name paired with a fabricated
+    value still passed if that name appeared elsewhere with its real value,
+    and a bare substring check let a fabricated "44" match inside an
+    unrelated "44109" on a different page. Now the source is split into
+    lines, and a result is only accepted if its value appears as a whole
+    number on one of the same lines as its test name, tying it to the row
+    it claims to come from rather than the document at large."""
     if not source_text:
         # CHANGED: this used to return `results` unverified. An empty source
         # text means the PDF had no usable text layer AND OCR produced
@@ -179,23 +168,14 @@ def _resolve_or_synthesize_id(raw_name: str) -> Tuple[str, bool]:
 # --------------------------------------------------------------------------
 
 def _extract_tables_with_pages(file_bytes: bytes) -> Tuple[List[Tuple[int, list, Optional[str]]], set]:
-    """Extracts RULED tables (pdfplumber's default "lines" strategy).
-
-    Many real lab PDFs align columns with whitespace only, with no ruled grid
-    (confirmed on the Sterling Accuris sample). A text-position strategy was
-    previously used as a fallback for those pages, but it has been removed:
-    it did more harm than good. On a whitespace-aligned page it infers a grid
-    for the WHOLE page and shreds words across cells (['Total P', 'rotein',
-    ...], ['Test', 'Resul', 't Unit', ...]) - which produced truncated test
-    names, and swept up letterhead and doctors' signature blocks as if they
-    were results. Worse, those junk rows counted towards
-    MIN_STRUCTURED_RESULTS, so the positional extractor that handles these
-    pages correctly never got to run.
-
-    Pages with no ruled table are handled by _extract_columnar_rows()
-    instead, which works from word coordinates. Returns (tables, pages that
-    yielded a ruled table) so the caller knows which pages still need the
-    positional pass.
+    """Extracts ruled tables (pdfplumber's default "lines" strategy). Many
+    specimen PDFs align columns with whitespace only, with no ruled grid; a
+    text-position fallback for those pages was removed after it shredded
+    words across an inferred whole-page grid and swept up letterhead as if
+    it were results, junk rows that then blocked the positional extractor
+    (see _extract_columnar_rows) from running at all. Returns (tables,
+    pages that yielded a ruled table) so the caller knows which pages
+    still need that positional pass.
     """
     out = []
     ruled_pages = set()
@@ -260,21 +240,17 @@ _HEAD_REF = ("ref", "biological", "interval", "normal range", "range")
 
 
 def _find_header_row(table: list) -> Optional[int]:
-    """CHANGED: the header index was hardcoded to table[0].
-
-    On real lab PDFs the column header is NOT the first row - rows 0..12 are
-    letterhead, patient demographics and sample metadata, and the actual
-    "Test | Result | Unit | Biological Ref. Interval" row sits at index 13-19
-    (confirmed on all 19 pages of the Sterling Accuris report). find_col()
-    therefore returned None on row 0 and the whole table was discarded, so
-    Tier 1 returned ZERO rows and every such report fell through to the
-    vision LLM - the expensive, hallucination-prone tier - for data that was
-    sitting right there in the text layer.
+    """BUG FOUND: the header index used to be hardcoded to table[0], but on
+    specimen PDFs the column header is often several rows down, past
+    letterhead and demographics. find_col() then returned None on row 0
+    and the whole table was discarded, sending every such report to the
+    expensive, hallucination-prone vision tier for data that was sitting
+    right there in the text layer.
 
     Scans for the first row that looks like a column header instead. Cells
-    are joined before matching because the text-strategy grid fragments
-    words across cells (['Test', 'Resul', 't Unit', 'Biological Re', 'f.']),
-    which broke substring matching on individual cells.
+    are joined before matching since the text-strategy grid sometimes
+    fragments words across cells, which broke substring matching on
+    individual cells.
     """
     for i, row in enumerate(table[:40]):
         joined = " ".join((c or "") for c in row).lower()
@@ -349,19 +325,14 @@ _QUALITATIVE_VALUES = {
 def _page_lines(page) -> List[List[dict]]:
     """Groups a page's words into visual lines, left to right.
 
-    BUG FOUND (Sterling Accuris sample report, page 3): a hidden word
-    'kidraH' - "Hardik" (from a signature 14 pages later) written backwards -
-    was extracted at x0=-1.35 (off the left edge of the visible page,
-    outside page.width) with direction='ttb' (vertical, not the normal
-    left-to-right reading flow) and upright=False. Its `top` coordinate
-    happened to fall within _ROW_TOLERANCE of the real "Direct LDL" row, so
-    it was grouped into that line and, being the leftmost word, prepended to
-    the test name: "kidraH Direct LDL". This is very likely a leftover
-    artifact from the source PDF having been password-protected and then
-    "unlocked" - not text a human viewing the page would ever see.
-    Excluding non-upright words and words that fall outside the page's
-    visible horizontal bounds keeps line-grouping to the actual printed
-    left-to-right table content.
+    BUG FOUND: a specimen PDF contained a hidden word from a signature
+    elsewhere in the document, extracted off the left edge of the visible
+    page, rotated vertically and non-upright, likely a leftover artifact
+    from the source PDF being password-protected and then unlocked. Its
+    coordinates happened to fall on the same row as a real result line, so
+    it got prepended to that test's name. Excluding non-upright words and
+    words outside the page's visible bounds keeps line-grouping to the
+    actual printed left-to-right table content.
     """
     try:
         words = page.extract_words(use_text_flow=False, keep_blank_chars=False)
@@ -691,15 +662,11 @@ def _extract_columnar_rows(file_bytes: bytes) -> List[dict]:
 
 
 def parse_structured_tables(file_bytes: bytes) -> List[dict]:
-    """TIER 1: free, instant, LLM-free. When it works, it's also the most
-    trustworthy tier - ref_range comes straight from a header-mapped column,
-    not an LLM transcription.
-
-    Two complementary strategies, both deterministic: header-mapped grid
-    tables (best on ruled/bordered reports) and positional columnar
-    extraction (best on whitespace-aligned reports). Results are merged, so a
-    report that only one strategy understands is still handled.
-    """
+    """Tier 1: free, instant, LLM-free, and the most trustworthy tier since
+    ref_range comes straight from a header-mapped column, not an LLM
+    transcription. Two complementary deterministic strategies, header-mapped
+    grid tables and positional columnar extraction, are merged so a report
+    that only one strategy understands is still handled."""
     tables, ruled_pages = _extract_tables_with_pages(file_bytes)
     results = []
     for page_num, table, specimen in tables:
@@ -766,22 +733,9 @@ def parse_report(
     patient_sex: str = "unknown",
     patient_age: int = 30,
 ) -> dict:
-    """
-    Parses PDF reports using a cost-ordered, cheapest-first pipeline:
-      Tier 1: Deterministic table extraction (pdfplumber, free, instant, no LLM)
-      Tier 2: Multimodal Vision LLM   (only if Tier 1 found too little)
-      Tier 3: Text-Based LLM          (only if Tier 2 found nothing)
-      Tier 4: Deterministic Regex     (final safety net)
-
-    CHANGED from the previous version: table/regex extraction used to be the
-    LAST resort, meaning every PDF - even ones with clean ruled tables -
-    burned an LLM call. Tier 1 now runs first and, when confident, returns
-    with ZERO LLM calls spent.
-
-    Every result, from every tier, is passed through
-    reference_db.finalize_result() so status/normal-range are computed the
-    same deterministic way everywhere, and merged via dedupe_results() so
-    the same test never appears twice across tiers.
+    """Cost-ordered pipeline: table extraction, vision LLM, text LLM, then
+    regex, each tried only if the previous tier found too little. Every
+    result is merged through the same finalize/dedupe path across tiers.
     """
     # --- explicit single-mode overrides (unchanged behavior, now also
     #     routed through finalize_result/dedupe_results for consistency) ---

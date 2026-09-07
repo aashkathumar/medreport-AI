@@ -92,12 +92,9 @@ def _build_grounding(test: TestResult) -> Dict[str, Any]:
 
 def _coerce_details(details: dict) -> dict:
     """Normalises one LLM explanation object into the shapes ExplainedResult
-    requires, before pydantic ever sees it.
-
-    Some models return lifestyle_suggestions as a string instead of a list,
-    which used to crash the whole upload. This coerces what's recoverable
-    instead, so one malformed field degrades to fallback copy, not a 500.
-    """
+    expects, before pydantic ever sees it. Some models return
+    lifestyle_suggestions as a string instead of a list, which used to crash
+    the whole upload; this coerces what's recoverable instead."""
     if not isinstance(details, dict):
         return {}
 
@@ -253,18 +250,11 @@ _CIRCUIT_LOCK = threading.Lock()
 
 
 def _is_provider_wide_failure(reason: str) -> bool:
-    """Whether a failure reflects the PROVIDER/ACCOUNT rather than one model.
-
-    A 429 (shared account rate limit, e.g. Groq's per-account TPM, or
-    Cohere's shared 20/min trial pool across all its models), a 5xx
-    (server-side outage), or a connection-level failure (DNS/refused, the
-    endpoint itself is unreachable, regardless of which model was asked
-    for) genuinely affect every model on that provider, so those still
-    bench the whole provider. A plain timeout is treated as model-specific:
-    it usually means that one model was slow to respond, not that the
-    account or endpoint is down, so it should only cost that one model its
-    cooldown, not its siblings'.
-    """
+    """Whether a failure reflects the PROVIDER/ACCOUNT rather than one
+    model. A 429, a 5xx, or a connection-level failure genuinely affects
+    every model on that provider; a plain timeout usually means one model
+    was slow, not that the account or endpoint is down, so it should only
+    cost that one model its cooldown, not its siblings'."""
     text = (reason or "").lower()
     return any(marker in text for marker in (
         "429", "rate limit", "500", "502", "503", "504",
@@ -322,11 +312,9 @@ def _reset_circuit(provider: str, entry: str) -> None:
 
 
 class LLMUnavailableError(RuntimeError):
-    """No provider in the chain could serve this request.
-
-    A distinct type so callers can tell "every provider failed" apart from a
-    bug in our own code, previously both surfaced as a bare RuntimeError.
-    """
+    """No provider in the chain could serve this request. A distinct type
+    so callers can tell this apart from a bug in our own code, previously
+    both surfaced as a bare RuntimeError."""
 
 
 def _build_chain(
@@ -336,31 +324,17 @@ def _build_chain(
     chain_offset: int = 0,
     use_reserved: bool = False,
 ) -> List[str]:
-    """Resolves the ordered provider chain for one request.
+    """Resolves the ordered provider chain for one request, split out of
+    call_with_fallback so routing is testable on its own.
 
-    Split out of call_with_fallback so the routing rules are testable on their
-    own, and so an explicitly-requested provider that CANNOT serve the
-    capability fails loudly here instead of silently returning an empty chain
-    and looking like a generic "all providers failed".
+    BUG FOUND: every batch tried Mistral first, always, so under concurrency
+    all simultaneous batches hit its rate limit at once while other
+    providers sat idle. `chain_offset` rotates which provider each batch
+    tries first, spreading load without any batch losing its fallback chain.
 
-    BUG FOUND: every batch used the SAME chain order (mistral first, always).
-    Under concurrency this meant every one of the (up to 8) simultaneously-
-    fired batches hit Mistral first, all at once, the free-tier key's rate
-    limit got hit by the concurrency itself, not by total request volume,
-    while Groq/OpenRouter/Gemini sat idle until Mistral failed. `chain_offset`
-    rotates which provider each batch tries FIRST (batch 0 starts at index 0,
-    batch 1 at index 1, ...), spreading first-attempt load evenly across all
-    configured providers while every batch still has the full chain as
-    fallback, no batch loses resilience, they just don't all queue behind
-    the same provider at once.
-
-    use_reserved=True (retry calls only) puts settings.retry_reserved_chain
-    FIRST, ahead of the regular chain. Those entries are never touched by the
-    primary wave, so they can't have been circuit-tripped or quota-exhausted
-    by some unrelated batch before the retry gets to them, they're
-    guaranteed fresh. The regular chain still follows as a fallback if the
-    reserve also fails, so a retry is never worse off than before this
-    existed, only potentially better.
+    use_reserved=True puts the retry-reserved chain first, since those
+    entries were never touched by the primary wave and are guaranteed
+    fresh; the regular chain still follows if the reserve also fails.
     """
     want_vision = capability == "vision"
 
@@ -409,13 +383,10 @@ def _build_chain(
 
 
 def _ungrounded_result(test: TestResult) -> ExplainedResult:
-    """Honest placeholder for a test with no NHS/NIH grounding at all.
-
-    ETHICS CONSTRAINT: no status/range fields exist on
-    ExplainedResult on this branch (see schemas.py), and the fallback text
-    below deliberately never references the patient's own value or status --
-    it only says the test isn't covered, same as it would for any patient.
-    """
+    """Honest placeholder for a test with no NHS/NIH grounding at all. No
+    status/range fields exist on ExplainedResult, and this fallback text
+    never references the patient's own reading, only that the test isn't
+    covered, same as it would say for any patient."""
     return ExplainedResult(
         test_id=test.test_id,
         raw_name=test.raw_name,
@@ -432,12 +403,10 @@ def _ungrounded_result(test: TestResult) -> ExplainedResult:
 
 
 def _is_transient(exc: Exception) -> bool:
-    """Worth retrying the SAME provider, vs. falling straight through.
-
-    429 / 5xx / timeouts are transient. A 404 (retired model), a 401 (bad key)
-    or our own "text-only provider got images" ValueError will fail identically
-    every time, retrying those just adds latency to a guaranteed failure.
-    """
+    """Worth retrying the same provider, vs. falling straight through. 429/
+    5xx/timeouts are transient; a 404, 401, or our own "text-only provider
+    got images" error will fail identically every time, so retrying those
+    just adds latency to a guaranteed failure."""
     text = str(exc).lower()
     if any(marker in text for marker in ("404", "401", "403", "not found", "cannot process image")):
         return False
@@ -460,20 +429,13 @@ def call_with_fallback(
     """Tries each provider in the capability-appropriate chain, retrying
     transient failures on the same provider before moving on.
 
-    CHANGED (three real bugs):
-      1. `capability` was accepted and then IGNORED, this always read
-         settings.text_fallback_chain, so VISION_FALLBACK_CHAIN was dead
-         config that never took effect. Vision extraction was routed down the
-         text chain, whose first entry (groq_llama) is text-only and raises on
-         image payloads, burning a guaranteed-failed attempt on every single
-         vision batch.
-      2. `supports_vision` was imported and never called, so nothing actually
-         stopped an image payload being handed to a text-only provider. Now a
-         vision request skips text-only providers outright.
-      3. settings.llm_max_retries / llm_retry_backoff_sec were defined in
-         config and referenced nowhere, there was no retry at all. One
-         transient 429 from groq (~5s/batch) permanently demoted the request
-         to gemini (~33s/batch). They are honoured here now.
+    Fixed three real bugs here: `capability` was accepted but ignored, so
+    vision requests were routed down the text chain and burned a guaranteed
+    failure on the first, text-only provider; `supports_vision` was imported
+    but never called, so nothing actually stopped that; and the configured
+    retry settings were defined but never read, so one transient 429 would
+    permanently demote a request to a much slower provider. All three are
+    honoured here now.
     """
     has_images = isinstance(prompt, list) and any(
         isinstance(b, dict) and b.get("type") == "image_url" for b in prompt
@@ -519,11 +481,9 @@ def call_with_fallback(
 
 def _patient_facing_text(details: Dict[str, Any]) -> str:
     """Every generated field a patient actually reads, as one blob.
-
-    lifestyle_suggestions and gp_question are included deliberately: they are
-    the most ACTIONABLE fields, and "take 325 mg ferrous sulphate three times
-    daily" is exactly the invented-dosage case the verifier exists to stop.
-    """
+    lifestyle_suggestions and gp_question are included deliberately, since
+    they're the most actionable fields and an invented dosage there is
+    exactly the case the verifier exists to catch."""
     parts = [
         details.get("what_it_measures", ""),
         " ".join(details.get("lifestyle_suggestions", []) or []),
@@ -533,18 +493,14 @@ def _patient_facing_text(details: Dict[str, Any]) -> str:
 
 
 def _allowed_numbers_for(test: TestResult) -> set:
-    """Figures an explanation may legitimately cite without them appearing in
-    the reference text: digits belonging to the unit string only.
-
-    ETHICS CONSTRAINT: unlike feature/developv4.1, the
-    patient's own value and reference bounds are deliberately NOT allowed
-    here, this branch's output must never cite this patient's specific
-    number or range at all, so if the model does anyway, the verifier below
-    should catch and reject it rather than have this list quietly permit it.
-
-    The unit still matters, "10^9/L" parses as the two quantities 10 and 9,
-    so without seeding them a perfectly grounded platelet or WBC explanation
-    gets rejected for citing "unsourced figures".
+    """Figures an explanation may legitimately cite without appearing in the
+    reference text: digits belonging to the unit string only. The patient's
+    own reading and reference bounds are deliberately NOT allowed here, so
+    if the model cites them anyway, the verifier below catches it rather
+    than this list quietly permitting it. The unit still matters though:
+    "10^9/L" parses as the two quantities 10 and 9, so without seeding
+    them a correctly grounded platelet or WBC explanation would wrongly
+    get rejected for citing "unsourced figures".
     """
     return _numbers_in(test.unit or "")
 
@@ -578,8 +534,7 @@ _CACHE_LOCK = threading.Lock()
 
 def _cache_load() -> None:
     """Reads the persisted cache into memory once, at import time. JSON has
-    no tuple keys, so each entry is stored as {"key": [...], "value": {...}}
-    and reassembled into a tuple key here."""
+    no tuple keys, so each entry is reassembled into one here."""
     if not _CACHE_FILE.exists():
         return
     try:
@@ -593,21 +548,16 @@ def _cache_load() -> None:
 
 
 def _cache_save() -> None:
-    """Full rewrite on every new entry, simplest way to avoid a corrupted
-    file from a partial append, and the expected size (low thousands of
-    entries at most, for a dissertation-scale project) makes that cheap.
+    """Full rewrite on every new entry, the simplest way to avoid a
+    corrupted file from a partial append at this project's small scale.
 
-    BUG FOUND (pre-deployment check, 2026-09-01): on AWS Lambda, the code
-    directory this path resolves under is baked into the read-only container
-    image, a cache MISS during a live request (any test not already in the
-    image's precomputed cache) would raise on this write and fail the whole
-    explanation call, not just skip caching. Persistence across invocations
-    was never available on Lambda anyway (each cold start gets a fresh
-    filesystem), so this write was only ever a same-warm-container
-    optimisation there; failing to persist should degrade to in-memory-only
-    caching for that container's remaining lifetime, not crash the request.
-    Local/GCP deployments (writable filesystem) are unaffected, the write
-    still happens exactly as before."""
+    BUG FOUND: on AWS Lambda, this path resolves inside the read-only
+    container image, so a cache miss during a live request would raise on
+    this write and fail the whole explanation call. Lambda never persisted
+    across invocations anyway (each cold start gets a fresh filesystem), so
+    a failed write here now degrades to in-memory-only caching for that
+    container's lifetime instead of crashing the request. Local/GCP
+    deployments have a writable filesystem and are unaffected."""
     try:
         _CACHE_FILE.parent.mkdir(exist_ok=True)
         entries = [{"key": list(k), "value": v} for k, v in _EXPLANATION_CACHE.items()]
@@ -620,25 +570,16 @@ _cache_load()
 
 
 def _cache_key(test: TestResult) -> tuple:
-    """Exact-match signature.
-
-    ETHICS CONSTRAINT SIMPLIFICATION: on feature/developv4.1,
-    this key included the literal value/status/range, because the generated
-    text quoted the patient's specific figure and cited their own reference
-    bounds, two patients with different values genuinely needed different
-    cached text. On this branch, generation is deliberately GENERAL to the
-    test (never references the patient's value, status, or range at all, see
+    """Exact-match signature. Generation is deliberately general to the
+    test, never referencing the patient's own reading or status (see the
     SYSTEM prompt / _allowed_numbers_for), so every patient with the same
-    test_id and specimen gets identical, correctly-grounded text. Keying on
-    test_id/specimen alone (like the what_it_measures precompute cache)
-    means this now behaves as a per-test cache, not a per-result one --
-    far higher hit rate, since it no longer misses on a value that's never
-    been seen at that exact number before.
+    test_id and specimen gets identical, correctly grounded text; keying
+    on just those two turns this into a per-test cache with a far higher
+    hit rate than the old per-result design.
 
-    specimen stays in the key: the same test_id can resolve to different
-    reference material depending on specimen (e.g. urinary vs blood
-    glucose both alias to GLUCOSE, see the grounding_test_id redirect in
-    _build_grounding), so collapsing specimen away would let one specimen's
+    specimen stays in the key because the same test_id can resolve to
+    different reference material depending on specimen (urinary vs blood
+    glucose both alias to GLUCOSE), so dropping it would let one specimen's
     cached text leak into the other's results.
     """
     return (test.test_id, getattr(test, "specimen", None))
@@ -664,15 +605,10 @@ def _explain_batch(
     chain_offset: int = 0,
     use_reserved: bool = False,
 ) -> Dict[str, dict]:
-    """Issues at most ONE LLM call for one batch and returns test_id -> explanation.
-
-    Tests with an exact-match cache hit (see _cache_key) never reach the LLM
-    at all. If every test in the batch is a cache hit, no network call is
-    made. Returns whatever was resolved (cache hits included) even if the
-    network call itself fails entirely, which the caller treats as
-    "degraded" for whatever is still missing and fills with deterministic
-    fallback copy.
-    """
+    """Issues at most one LLM call for one batch and returns test_id ->
+    explanation. Cache hits (see _cache_key) never reach the LLM at all,
+    and whatever was resolved is returned even if the network call itself
+    fails outright, which the caller fills in with fallback copy."""
     results: Dict[str, dict] = {}
     to_call: List[Tuple[TestResult, Dict[str, Any]]] = []
     for test, grounding in llm_batch:
@@ -751,17 +687,13 @@ def explain_all_test_results_batched(
     provider: str = None,
     model_name: str = None,
 ) -> Tuple[List[ExplainedResult], List[str], List[str]]:
-    """CHANGED: batches are now issued CONCURRENTLY instead of one at a time.
-
-    They are completely independent of one another, but were run in a strict
-    serial loop. A 79-test report (real Tier-1 output from a 19-page pathology
-    PDF) is 14 batches: ~70s serially on the fastest provider, and ~8 MINUTES
-    once a rate-limit pushed it onto a slower one, long enough to look like
-    an infinite hang and to blow past the frontend's timeout, so the user got
-    no result at all. Concurrency is bounded by settings.llm_max_concurrency
-    so we don't simply trade the latency for 429s.
-
-    Ordering of the returned list is preserved regardless of completion order.
+    """Batches are issued concurrently rather than in a strict serial loop.
+    A 79-test specimen report is 14 batches: ~70s serially on the fastest
+    provider, and ~8 minutes once a rate limit pushed it onto a slower one,
+    long enough to blow past the frontend's timeout and return nothing.
+    Concurrency is bounded by settings.llm_max_concurrency so this doesn't
+    just trade the latency for 429s. Output order matches input order
+    regardless of completion order.
     """
     if not test_results:
         return [], [], []
@@ -937,22 +869,15 @@ def generate_summary(
     provider: str = None,
     model_name: str = None,
 ) -> dict:
-    """ETHICS CONSTRAINT REWRITE: feature/developv4.1's
-    version built this summary around "Abnormal" results (status HIGH/LOW,
-    with each test's specific value quoted), exactly the per-result
-    clinical interpretation this branch must not produce, and
-    ExplainedResult no longer even carries a status/value-vs-range concept
-    to build that list from (see schemas.py).
+    """Rewritten under ethics review, since this used to build the summary
+    around flagged "abnormal" results with each test's specific reading
+    quoted, exactly the per-result interpretation now out of scope.
 
-    Deliberately NOT an LLM call any more, on this branch: once "abnormal"
-    and per-value citation are off the table, there's nothing left for a
-    model to meaningfully summarize that isn't already covered by each
-    test's own (already-grounded, already-verified) what_it_measures /
-    lifestyle_suggestions / gp_question, generating fresh top-level prose
-    would only reintroduce the same fabrication risk `_verify_grounded`
-    exists to catch, for no real benefit. Instead this reuses real,
-    already-verified per-test content deterministically. No LLM call means
-    no rate-limit exposure and no "summary_degraded" case to handle either.
+    Deliberately not an LLM call any more: once per-reading citation is
+    off the table, there's nothing left to summarize that isn't already
+    covered by each test's own verified fields, so this reuses that
+    content deterministically instead of reintroducing fabrication risk
+    for no benefit. No LLM call also means no rate-limit exposure here.
     """
     count = len(explained_results)
     plural = "test" if count == 1 else "tests"
